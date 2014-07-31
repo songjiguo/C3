@@ -20,6 +20,8 @@
 #include <print.h>
 #include <cos_vect.h>
 
+#include <pgfault.h>
+
 #include <lock.h>
 
 #include <sched.h>

@@ -1,8 +1,8 @@
-C_OBJS=evt.o
+C_OBJS=extended_ser1.o
 ASM_OBJS=
-COMPONENT=e.o
-INTERFACES=evt
-DEPENDENCIES=sched printc mem_mgr_large lock valloc ll_log pgfault
+COMPONENT=ec3ser1.o
+INTERFACES=ec3_ser1
+DEPENDENCIES=periodic_wake sched printc lock mem_mgr timed_blk evt
 IF_LIB=
 
 include ../../Makefile.subsubdir

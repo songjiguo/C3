@@ -26,6 +26,8 @@
 
 #include <sched.h>
 
+#include <pgfault.h>
+
 //#define ACT_LOG
 #ifdef ACT_LOG
 #define ACT_LOG_LEN 32

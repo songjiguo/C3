@@ -10,13 +10,17 @@ typedef enum {
 	EVT_ALL   = (EVT_READ|EVT_WRITE|EVT_SPLIT|EVT_MERGE)
 } evt_flags_t;
 
-long evt_create(spdid_t spdid);
+// The following APIs have fault tolerance support
 long evt_split(spdid_t spdid, long parent_evt, int grp);
+long evt_create(spdid_t spdid);
 void evt_free(spdid_t spdid, long extern_evt);
 long evt_wait(spdid_t spdid, long extern_evt);
+int evt_trigger(spdid_t spdid, long extern_evt);
+
+// The following APIs have no fault tolerance support
+long evt_create(spdid_t spdid);
 long evt_grp_wait(spdid_t spdid);
 int evt_grp_mult_wait(spdid_t spdid, struct cos_array *data);
-int evt_trigger(spdid_t spdid, long extern_evt);
 int evt_set_prio(spdid_t spdid, long extern_evt, int prio);
 unsigned long *evt_stats(spdid_t spdid, unsigned long *stats);
 int evt_stats_len(spdid_t spdid);

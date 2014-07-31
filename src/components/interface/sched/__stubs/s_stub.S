@@ -9,7 +9,7 @@
 .text	
 
 cos_asm_server_stub_spdid(sched_wakeup)
-cos_asm_server_stub_spdid(sched_block)
+//cos_asm_server_stub_spdid(sched_block)
 cos_asm_server_stub_spdid(sched_timeout)
 cos_asm_server_stub_spdid(sched_timeout_thd)
 cos_asm_server_stub_spdid(sched_create_net_brand)
@@ -26,3 +26,6 @@ cos_asm_server_stub(sched_priority)
 	
 cos_asm_server_stub_spdid(sched_component_take)
 cos_asm_server_stub_spdid(sched_component_release)
+
+cos_asm_server_fn_stub_spdid(sched_block, __sg_sched_block)	
+cos_asm_server_fn_stub_spdid(sched_reflect, __sg_sched_reflect)

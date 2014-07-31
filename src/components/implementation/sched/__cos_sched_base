@@ -1831,6 +1831,7 @@ sched_init(void)
 	return 0;
 }
 
+
 void cos_upcall_fn(upcall_type_t t, void *arg1, void *arg2, void *arg3)
 {
 //	printc("upcall type %d, core %ld, thd %d\n", t, cos_cpuid(), cos_get_thd_id());
@@ -1863,3 +1864,9 @@ void cos_upcall_fn(upcall_type_t t, void *arg1, void *arg2, void *arg3)
 
 	return;
 }
+
+// this is dummy function for export purpose
+// the reflection occurs over the server interface
+int sched_reflect(spdid_t spdid, int thdid) { return 0; }
+
+
