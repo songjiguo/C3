@@ -270,13 +270,17 @@ interrupt_fault_update(struct thread *next) /* for now, this is the timer thread
 static inline unsigned long
 fault_cnt_syscall_helper(int spdid, int option, spdid_t d_spdid, unsigned int cap_no)
 {
+	int i;
 	unsigned long ret = 0;
 	struct spd *d_spd, *this_spd, *dest_spd;
 	struct invocation_cap *cap_entry;
 	unsigned int cap_no_origin;
-	
-	this_spd = spd_get_by_index(spdid);
-	d_spd      = spd_get_by_index(d_spdid);
+
+	this_spd  = spd_get_by_index(spdid);
+	d_spd     = spd_get_by_index(d_spdid);
+
+	/* printk("passed this_spd is %d\n", spdid); */
+	/* printk("passed d_spd is %d\n", d_spdid); */
 
 	if (!this_spd || !d_spd) {
 		printk("cos: invalid fault cnt  call for spd %d or spd %d\n",
@@ -293,67 +297,23 @@ fault_cnt_syscall_helper(int spdid, int option, spdid_t d_spdid, unsigned int ca
 		return -1;
 	}
 
-//	cap_entry = &invocation_capabilities[cap_no];   jiguo
-
-	if (unlikely(!cap_entry->owner)) {
-		printk("cos: No owner for cap %d.\n", cap_no);
-		return -1;
-	}
+	cap_entry = &d_spd->caps[cap_no];
+	/* printk("dest_spd is %d\n", spd_get_index(cap_entry->destination)); */
+	/* printk("2\n"); */
 
 	switch(option) {
 	case COS_SPD_FAULT_TRIGGER:
 		d_spd->fault.cnt++;
-		/* printk("cos: SPD %d Fault.Cnt is incremented by 1\n", spd_get_index(d_spd)); */
 		break;
-	case COS_CAP_FAULT_UPDATE: /* does not need destination spd, got by cap_no on interface */
-		cap_no_origin = cap_no;
-		assert(cap_entry->owner == d_spd);
-
-		dest_spd = cap_entry->destination;
-		/* printk("dest_spd is %d\n", spd_get_index(dest_spd)); */
-		cap_entry->fault.cnt = dest_spd->fault.cnt;
-
-		/* printk("cap_no_origin %d): owner %d dest is %d\n", cap_no_origin, */
-		/*        spd_get_index(cap_entry->owner),spd_get_index(cap_entry->destination)); */
-		/* printk("cap_entry->fault.cnt %d\n",cap_entry->fault.cnt); */
-
-		/* It seems more reasonable to only update the corresponding cap fault ..... */
-		/* not for multiple clients, so still need */
-
-		/* assume capabilities are continuse in invocation_capabilities[], not true... */
-		/* + direction */
-		while(1) {
-			/* printk("++ direction\n"); */
-			cap_no_origin++;
-			//cap_entry = &invocation_capabilities[cap_no_origin];  jiguo
-			if (cap_entry->owner != d_spd) break;
-			
-			/* printk("ker ++ set cnt+(cap_no_origin %d): owner %d dest is %d\n", cap_no_origin, */
-			/*        spd_get_index(cap_entry->owner),spd_get_index(cap_entry->destination)); */
-
-			if (cap_entry->destination != dest_spd) continue;
-			cap_entry->fault.cnt = dest_spd->fault.cnt;
-			/* printk("cap_entry->fault.cnt %d\n",cap_entry->fault.cnt); */
-		}
-
-		cap_no_origin = cap_no;
-
-		/* - direction */
-		while(1) {
-			/* printk("-- direction\n"); */
-			cap_no_origin--;
-			//cap_entry = &invocation_capabilities[cap_no_origin];  jiguo
-			if (cap_entry->owner != d_spd) break;
-
-			/* printk("ker -- set cnt+(cap_no_origin %d): owner %d dest is %d\n", cap_no_origin, */
-			/*        spd_get_index(cap_entry->owner),spd_get_index(cap_entry->destination)); */
-
-			if (cap_entry->destination != dest_spd) continue;
-			cap_entry->fault.cnt = dest_spd->fault.cnt;
-			/* printk("cap_entry->fault.cnt %d\n",cap_entry->fault.cnt);	 */
-		}
-
-		/* printk("cos: CAP (owner %d dest %d) Fault is updated\n", spd_get_index(d_spd), spd_get_index(dest_spd) ); */
+	case COS_CAP_FAULT_UPDATE: 
+		/* Update fault counter for this client. This is slow
+		 * now... due to the new data structure */
+		for (i = 1; i < d_spd->ncaps ; i++) {
+			struct invocation_cap *cap = &d_spd->caps[i];
+			if (cap->destination == cap_entry->destination) {
+				cap->fault.cnt = cap_entry->destination->fault.cnt;
+			}
+		}		
 		break;
 	default:
 		ret = -1;

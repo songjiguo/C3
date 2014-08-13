@@ -19,11 +19,28 @@
 int regs_active = 0; 
 struct cos_regs regs;
 
+int fault_flt_notif_handler(spdid_t spdid, void *fault_addr, int flags, void *ip)
+{
+	/* printc("parameters: spdid %d fault_addr %p flags %d ip %p (thd %d)\n", spdid, fault_addr, flags, ip, cos_get_thd_id()); */
+	/* fault_page_fault_handler(spdid, fault_addr, flags, ip); */
+	return 0;
+}
+
+
+static int test_num = 0;
+
 int fault_page_fault_handler(spdid_t spdid, void *fault_addr, int flags, void *ip)
 {
 	unsigned long r_ip; 	/* the ip to return to */
 	int tid = cos_get_thd_id();
 	//int i;
+
+	printc("parameters: spdid %d fault_addr %p flags %d ip %p (thd %d)\n", spdid, fault_addr, flags, ip, cos_get_thd_id());
+
+	if (test_num++ > 5) {
+		printc("has failed %d times\n", test_num);
+		assert(0);
+	}
 
 	/* START UNCOMMENT FOR FAULT INFO */
 	/* if (regs_active) BUG(); */
@@ -52,6 +69,8 @@ int fault_page_fault_handler(spdid_t spdid, void *fault_addr, int flags, void *i
 	 * of the stub. */
 	assert(!cos_thd_cntl(COS_THD_INVFRM_SET_IP, tid, 1, r_ip-8));
 
+	/* set fault counter in faulty component cap table */
+	assert(!cos_fault_cntl(COS_SPD_FAULT_TRIGGER, spdid, 0));
 	/* 
 	 * Look at the booter: when recover is happening, the sstub is
 	 * set to 0x1, thus we should just wait till recovery is done.
@@ -59,10 +78,5 @@ int fault_page_fault_handler(spdid_t spdid, void *fault_addr, int flags, void *i
 	if ((int)ip == 1) failure_notif_wait(cos_spd_id(), spdid);
 	else         failure_notif_fail(cos_spd_id(), spdid);
 
-	return 0;
-}
-
-int fault_flt_notif_handler(spdid_t spdid, void *fault_addr, int flags, void *ip)
-{
 	return 0;
 }

@@ -258,8 +258,8 @@ mapping_crt(struct mapping *p, struct frame *f, spdid_t dest, vaddr_t to)
 		assert(cv == cvas_lookup(dest));
 	}
 	assert(cv->pages);
-	if (cvect_lookup(cv->pages, idx)) goto collision;
 
+	if (cvect_lookup(cv->pages, idx)) goto collision;
 	cvas_ref(cv);
 	m = cslab_alloc_mapping();
 	if (!m) goto collision;
@@ -414,6 +414,7 @@ int mman_revoke_page(spdid_t spd, vaddr_t addr, int flags)
 	int ret = 0;
 
 	LOCK();
+
 	m = mapping_lookup(spd, addr);
 	if (!m) {
 		ret = -1;	/* -EINVAL */
@@ -431,6 +432,10 @@ int mman_release_page(spdid_t spd, vaddr_t addr, int flags)
 	int ret = 0;
 
 	LOCK();
+
+	// Jiguo: when flags > 0, it is the src_spd. We want to revoke from it
+	if (flags > 0) spd = flags;
+
 	m = mapping_lookup(spd, addr);
 	if (!m) {
 		ret = -1;	/* -EINVAL */
@@ -470,6 +475,9 @@ void mman_release_all(void)
 	/* } */
 	UNLOCK();
 }
+
+// dummy function for the reflection
+vaddr_t mman_reflect(spdid_t spd, int src_spd, int cnt) {return 0;}
 
 /*******************************/
 /*** The base-case scheduler ***/

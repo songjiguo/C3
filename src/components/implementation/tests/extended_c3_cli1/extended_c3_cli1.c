@@ -14,8 +14,8 @@ int warm;
 
 #define ITER 5
 
-//#define EXAMINE_LOCK
-#define EXAMINE_EVT
+#define EXAMINE_LOCK
+//#define EXAMINE_EVT
 
 #define US_PER_TICK 10000
 

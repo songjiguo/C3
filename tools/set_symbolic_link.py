@@ -11,7 +11,7 @@ RECOVERY = 0
 ########################################
 # interface
 #######################################
-service_names = ['mem_mgr','rtorrent', 'sched', 'timed_blk', 'periodic_wake', 'cbuf_c', 'llboot']
+service_names = ['mem_mgr','rtorrent', 'sched', 'timed_blk', 'periodic_wake', 'cbuf_c', 'llboot', 'lock', 'evt']
 
 # interface
 interface_path = '/src/components/interface/'
@@ -51,6 +51,18 @@ fprr_path = '/src/components/implementation/sched/fprr'
 fprr_rec_c = '__fp_rr_rec'
 fprr_nor_c = '__fp_rr'
 fprr_c = 'fp_rr.c'
+
+#LOCK
+lock_component_path = '/src/components/implementation/lock/two_phase/'
+lock_rec_c = '__lock_rec'
+lock_nor_c = '__lock'
+lock_c = 'lock.c'
+
+#EVT
+evt_component_path = '/src/components/implementation/evt/edge/'
+evt_rec_c = '__evt_rec'
+evt_nor_c = '__evt'
+evt_c = 'evt.c'
 
 #FS
 ramfs_component_path = '/src/components/implementation/torrent/ramfs/'
@@ -282,6 +294,18 @@ def main():
             print service_names[i]
             set_link(service_names[i], pe_component_path, pe_c, pe_nor_c, pe_rec_c, 0)
             print
+
+        # component LOCK
+        if (service_names[i] == 'lock'):
+            print service_names[i]
+            set_link(service_names[i], lock_component_path, lock_c, lock_nor_c, lock_rec_c, 0)
+            print
+        # component EVT
+        if (service_names[i] == 'evt'):
+            print service_names[i]
+            set_link(service_names[i], evt_component_path, evt_c, evt_nor_c, evt_rec_c, 0)
+            print
+            
         # # component MM
         if (service_names[i] == 'cbuf_c'):
             print service_names[i]

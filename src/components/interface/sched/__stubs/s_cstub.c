@@ -81,7 +81,8 @@ rdblk_addblk(struct rec_data_blk *rd, struct blocked_thd *ptr_blkthd, int dep_th
 	ptr_blkthd->dep_thd = dep_thd;
 
 	INIT_LIST(ptr_blkthd, next, prev);
-	ADD_LIST(&rd->blkthd, ptr_blkthd, next, prev);
+	ADD_END_LIST(&rd->blkthd, ptr_blkthd, next, prev);
+	/* printc("\n[[[[sched_block: traking...ptr_blkthd %p (thd %d  spd %d rd->blkthd addr %p)]]]\n\n", ptr_blkthd, cos_get_thd_id(), rd->spdid, &rd->blkthd); */
        
 	return;
 }
@@ -92,27 +93,28 @@ int __sg_sched_block(spdid_t spdid, int dependency_thd)
 	struct blocked_thd blk_thd;
 	struct rec_data_blk *rd = NULL;
 
-#ifdef REFLECTION_ALL
+#ifdef REFLECTION
 	// add to list
 	cos_sched_lock_take();
-	if (unlikely(!rdblk_lookup(spdid))) {
+
+	rd = rdblk_lookup(spdid);
+	if (unlikely(!rd)) {
 		rd = rdblk_alloc(spdid);
 		assert(rd);
 		INIT_LIST(&rd->blkthd, next, prev);
 		rd->spdid = spdid;
-	} else {
-		rd = rdblk_lookup(spdid);
-		assert(rd);
 	}
-	assert(rd->spdid == spdid);
+
+	assert(rd && rd->spdid == spdid);
 	rdblk_addblk(rd, &blk_thd, dependency_thd);
 	cos_sched_lock_release();
 
 	sched_block(spdid, dependency_thd);
 
-	// remove from list
+	// remove from list in both normal path and reflect path
 	cos_sched_lock_take();
 	REM_LIST(&blk_thd, next, prev);
+	/* printc("sched_block: removing...blkthd %p (thd %d)\n", &blk_thd, cos_get_thd_id()); */
 	cos_sched_lock_release();
 #else
 	sched_block(spdid, dependency_thd);
@@ -122,30 +124,37 @@ int __sg_sched_block(spdid_t spdid, int dependency_thd)
 
 
 /* This is scheduler server interface function for client reflection
-   1) When reflect thread state for single object (say, a lock), par:
-   blocked thread id 2) When reflect thread state for component (say,
-   lock component), par: component id */
-int __sg_sched_reflect(spdid_t spd, int par)
+   src_spd : component from which the thread is blocked from
+   return  : id of the thread that needs to be woken up
+*/
+int __sg_sched_reflect(spdid_t spd, int src_spd, int cnt)
 {
         struct rec_data_blk *rd = NULL;
 	struct blocked_thd *blk_thd;
+	int ret = 0;
 
-	assert(par);
+	assert(src_spd);
+	cos_sched_lock_take();
+	/* printc("scheduler server side stub (thd %d)\n", cos_get_thd_id()); */
+	/* printc("passed reflection: spd %d src_spd %d\n", spd, src_spd); */
 
-	printc("scheduler server side stub (thd %d)\n", cos_get_thd_id());
-	printc("passed reflection: spd %d par %d\n", spd, par);
-
-#ifdef REFLECTION_ALL	
-	rd = rdblk_lookup(par);
-	assert(rd);
-	for (blk_thd = FIRST_LIST(&rd->blkthd, next, prev);
-	     blk_thd != &rd->blkthd;
-	     blk_thd = FIRST_LIST(blk_thd, next, prev)){
-		sched_wakeup(cos_spd_id(), blk_thd->id);
+	rd = rdblk_lookup(src_spd);
+	if (!rd) goto done;  // if there is no thread blocked from src_spd, return
+	
+	if (cnt) {
+		for (blk_thd = FIRST_LIST(&rd->blkthd, next, prev);
+		     blk_thd != &rd->blkthd;
+		     blk_thd = FIRST_LIST(blk_thd, next, prev)){
+			ret++;
+		}
+	} else {
+		blk_thd = FIRST_LIST(&rd->blkthd, next, prev);
+		REM_LIST(blk_thd, next, prev);
+		ret = blk_thd->id;
 	}
-#else
-	sched_wakeup(spd, par);
-#endif
-	return 0;
+done:
+	cos_sched_lock_release();
+	return ret;
 }
 
+// coalocated DS with object in spd??

@@ -7,7 +7,7 @@
 #ifndef OBJTYPE_H
 #define OBJTYPE_H
 
-//#define REFLECTION_ALL  // this can be defined for different object/service
+#define REFLECTION  // do the reflection on the bottom level component interface
 
 #define SPD_SCHED 20
 #define SPD_MM    21

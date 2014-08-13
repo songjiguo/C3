@@ -498,6 +498,9 @@ int spd_cap_set_dest(struct spd *spd, int cap, struct spd* dspd)
 	
 	if (!c) return -1;
 	c->destination = dspd;
+
+	// Jiguo: init fault counter and its owner in cap entry
+	c->owner = spd;
 	ipc_fault_update(c, dspd);
 
 	return 0;

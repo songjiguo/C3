@@ -12,8 +12,8 @@ static int low = 13;
 static int mid = 12;
 static int hig = 11;
 
-//#define EXAMINE_LOCK
-#define EXAMINE_EVT
+#define EXAMINE_LOCK
+//#define EXAMINE_EVT
 
 #ifdef EXAMINE_LOCK
 
@@ -74,6 +74,16 @@ vaddr_t ec3_ser1_test(void)
 
 	return 0;
 }
+
+
+void
+cos_init(void)
+{
+	printc("thd %d is trying to init lock\n", cos_get_thd_id());
+	LOCK_INIT();
+	printc("after init LOCK\n");
+}
+
 #endif
 
 
@@ -103,16 +113,7 @@ vaddr_t ec3_ser1_test(void)
 	if (cos_get_thd_id() == mid) try_mp();
 	return 0;
 }
+
 #endif
-
-
-/* void  */
-/* cos_init(void)  */
-/* { */
-/* 	printc("thd %d is trying to init lock\n", cos_get_thd_id()); */
-/* 	LOCK_INIT(); */
-/* 	printc("after init LOCK\n"); */
-/* } */
-
 
 

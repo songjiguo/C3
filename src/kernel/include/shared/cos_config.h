@@ -62,7 +62,7 @@
  * versions of interfaces, such as mmgr, schduler, cbuf, torrent. To
  * use it, run python set_symbolic_link.py under composite/tools */
 
-//#define RECOVERY_ENABLE 1               // 1 enable the fault notification in Composite kernel, 0 disable
+#define RECOVERY_ENABLE 1               // 1 enable the fault notification in Composite kernel, 0 disable
 
 /* For now, set INITONCE in cos_laoder and comment out boot_spd_caps in booter/fail function */
 /* to avoid the overhead of re-capability. Need fix later */

@@ -406,6 +406,11 @@ static inline struct sched_thd *sched_take_crit_sect(spdid_t spdid, struct sched
 		assert(!sched_thd_free(cs->holding_thd));
 		assert(!sched_thd_blocked(cs->holding_thd));
 		/* no recursive lock taking allowed */
+
+		/* printc("take: curr thread %d\n", cos_get_thd_id()); */
+		/* printc("take: curr->id %d\n", curr->id); */
+		/* printc("take: cs holding thread %d\n", cs->holding_thd->id); */
+
 		assert(curr != cs->holding_thd);
 		curr->contended_component = spdid;
 		assert(!curr->dependency_thd);
@@ -430,6 +435,11 @@ static inline int sched_release_crit_sect(spdid_t spdid, struct sched_thd *curr)
 	/* This ostensibly should be the case */
 	assert(cs->holding_thd == curr);
 	assert(curr->contended_component == 0);
+
+	/* printc("release: curr thread %d\n", cos_get_thd_id()); */
+	/* printc("release: curr->id %d\n", curr->id); */
+	/* printc("release: cs holding thread %d\n", cs->holding_thd->id); */
+	/* printc("unset cs holding thread %d (in spd %d)\n", cs->holding_thd->id, spdid); */
 
 	cs->holding_thd = NULL;
 	curr->ncs_held--;

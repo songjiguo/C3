@@ -393,9 +393,12 @@ failure_notif_fail(spdid_t caller, spdid_t failed)
 
 	LOCK();
 
+	printc("Booter is rebooting the failed component\n");
+
 //	boot_spd_caps_chg_activation(failed, 0);
 	md = &local_md[failed];
 	assert(md);
+
 	if (boot_spd_map_populate(md->h, failed, md->comp_info, 0)) BUG();
 	/* can fail if component had no boot threads: */
 	if (md->h->flags & COBJ_INIT_THD) boot_spd_thd(failed); 	

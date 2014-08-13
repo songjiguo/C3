@@ -124,7 +124,7 @@ rd_cons(struct rec_data_evt *rd, spdid_t spdid, unsigned long cli_evtid, unsigne
 	return;
 }
 
-#ifdef REFLECTION_ALL
+#ifdef REFLECTION
 static int
 cap_to_dest(int cap)
 {
@@ -151,7 +151,7 @@ update_rd(int evtid, int par_evtid, int cap)
 	rd->s_evtid = evt_create(cos_spd_id());
 	rd->fcnt = fcounter;
 
-#ifdef REFLECTION_ALL	
+#ifdef REFLECTION
 	int evt_spd = cap_to_dest(cap);
 	sched_reflect(cos_spd_id(), evt_spd);
 #else
@@ -246,8 +246,6 @@ CSTUB_ASM_2(evt_free, spdid, rd->s_evtid)
        	       fcounter++;
        	       goto redo;
        }
-
-	assert(rd);
 
 CSTUB_POST
 

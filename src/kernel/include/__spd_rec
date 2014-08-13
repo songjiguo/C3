@@ -79,7 +79,7 @@ struct spd;
 struct invocation_cap {
 	/* the spd that invocations are made to. destination ==
 	 * NULL means that this entry is free and not in use.  */
-	struct spd *owner, *destination;  // why need owner?
+	struct spd *owner, *destination;  // why need owner? update fault counter for all
 	unsigned int invocation_cnt:30;
 	isolation_level_t il:2;
 	vaddr_t dest_entry_instruction;

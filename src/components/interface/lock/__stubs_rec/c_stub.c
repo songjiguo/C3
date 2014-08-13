@@ -57,7 +57,7 @@ struct blocked_thd {
 
 struct rec_data_lk {
 	spdid_t       spdid;
-	int           owner_thd;  // this is only for sanity check
+	int           owner_thd;  // for sanity check
 	unsigned long c_lkid;
 	unsigned long s_lkid;
 
@@ -137,7 +137,7 @@ rd_cons(struct rec_data_lk *rd, spdid_t spdid, unsigned long cli_lkid, unsigned 
 	return;
 }
 
-#ifdef REFLECTION_ALL
+#ifdef REFLECTION
 static int
 cap_to_dest(int cap)
 {
@@ -148,9 +148,11 @@ cap_to_dest(int cap)
 }
 #endif
 
-extern int sched_reflect(spdid_t spdid, int par);
+extern int sched_reflect(spdid_t spdid, int src_spd, int cnt);
+extern int sched_wakeup(spdid_t spdid, unsigned short int thd_id);
+extern vaddr_t mman_reflect(spdid_t spd, int src_spd, int cnt);
+extern int mman_release_page(spdid_t spd, vaddr_t addr, int flags); 
 
-// owner_thd is used to do the sanity check (if the owner is the one who has the lock)
 static struct rec_data_lk *
 update_rd(int lkid, int thd, int cap)
 {
@@ -161,15 +163,33 @@ update_rd(int lkid, int thd, int cap)
 	if (unlikely(!rd)) goto done;
 	if (likely(rd->fcnt == fcounter)) goto done;
 
-	rd->s_lkid = lock_component_alloc(cos_spd_id()); // update server side id
-	rd->fcnt = fcounter;  // update fcounter first before wake up any other threads
-
-#ifdef REFLECTION_ALL	
-	// to reflect all threads from lock component
+#ifdef REFLECTION
+	int count_obj = 0; // only reflect objects before the fault
 	int lock_spd = cap_to_dest(cap);
-	sched_reflect(cos_spd_id(), lock_spd);
+
+	// remove the mapped page for lock spd
+	vaddr_t addr;
+	count_obj = mman_reflect(cos_spd_id(), lock_spd, 1);
+	printc("\n\nready to reflect mmgr....(count_obj %d)\n", count_obj);
+	while (count_obj--) {
+		addr = mman_reflect(cos_spd_id(), lock_spd, 0);
+		printc("reflect and release page %p\n", addr);
+		mman_release_page(cos_spd_id(), addr, lock_spd);
+	}
+
+	// to reflect all threads blocked from lock component
+	int wake_thd;
+	count_obj = sched_reflect(cos_spd_id(), lock_spd, 1);
+	printc("\nready to reflect scheduler....(count_obj %d)\n", count_obj);
+	while (count_obj--) {
+		wake_thd = sched_reflect(cos_spd_id(), lock_spd, 0);
+		printc("reflect and wake up thread %d\n", wake_thd);
+		sched_wakeup(cos_spd_id(), wake_thd);
+	}
+	printc("\n");
+
 #else
-        /* this thread will do the reflection on the status of other
+        /* current thread will do the reflection on the state of other
 	   threads (object) by waking up all threads that block on
 	   this lock (the thread is already blocked in the scheduler
 	   when the lock component crashes). Notice that the thread
@@ -179,10 +199,14 @@ update_rd(int lkid, int thd, int cap)
 	for (blk_thd = FIRST_LIST(&rd->blkthd, next, prev);
 	     blk_thd != &rd->blkthd;
 	     blk_thd = FIRST_LIST(blk_thd, next, prev)){
-		sched_reflect(cos_spd_id(), blk_thd->id);
+		sched_wakeup(cos_spd_id(), blk_thd->id);
 	}
+
 #endif
 
+	rd->s_lkid = lock_component_alloc(cos_spd_id()); // update server side id
+	rd->fcnt = fcounter;  // update fcounter first before wake up any other threads
+	
 done:
 	return rd;
 }
@@ -200,10 +224,8 @@ CSTUB_FN_ARGS_1(unsigned long, lock_component_alloc, spdid_t, spdid)
 
         struct rec_data_lk *rd = NULL;
 	unsigned long ser_lkid, cli_lkid;
-
 redo:
 CSTUB_ASM_1(lock_component_alloc, spdid)
-
        if (unlikely (fault)){
 	       if (cos_fault_cntl(COS_CAP_FAULT_UPDATE, cos_spd_id(), uc->cap_no)) {
 		       printc("set cap_fault_cnt failed\n");
@@ -264,22 +286,20 @@ CSTUB_FN_ARGS_3(int, lock_component_take, spdid_t, spdid, unsigned long, lock_id
 	struct blocked_thd blk_thd;
 	struct rec_data_lk *rd = NULL;
 redo:
-        rd = update_rd(lock_id, thd, uc->cap_no);
+        rd = update_rd(lock_id, thd, uc->cap_no);   // call call booter instead
 	if (!rd) {
 		printc("try to take a non-tracking lock\n");
 		return -1;
 	}
-
        rdlk_addblk(rd, &blk_thd);       
-
 CSTUB_ASM_3(lock_component_take, spdid, rd->s_lkid, thd)
 
        if (unlikely (fault)){
+	       printc("found a fault\n");
 	       if (cos_fault_cntl(COS_CAP_FAULT_UPDATE, cos_spd_id(), uc->cap_no)) {
 		       printc("set cap_fault_cnt failed\n");
 		       BUG();
 	       }
-	       
 	       /*  remove current thd from blocking list since the
 		   fault occurs either before the current thd blocked
 		   (invoke scheduler) or after woken up (return from
@@ -291,7 +311,6 @@ CSTUB_ASM_3(lock_component_take, spdid, rd->s_lkid, thd)
        	       fcounter++;
 	       goto redo;
        }
-
        REM_LIST(&blk_thd, next, prev);
 
 CSTUB_POST

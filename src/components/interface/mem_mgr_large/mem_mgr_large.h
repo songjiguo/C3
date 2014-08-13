@@ -25,4 +25,6 @@ int mman_revoke_page(spdid_t spd, vaddr_t addr, int flags);
 vaddr_t mman_alias_page(spdid_t s_spd, vaddr_t s_addr, spdid_t d_spd, vaddr_t d_addr);
 void mman_print_stats(void);
 
+vaddr_t mman_reflect(spdid_t spd, int src_spd, int cnt);
+
 #endif 	    /* !MEM_MGR_H */

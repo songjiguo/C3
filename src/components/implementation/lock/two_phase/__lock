@@ -5,9 +5,6 @@
  * Public License v2.
  *
  * Initial author: Gabriel Parmer, gabep1@cs.bu.edu, 2008.
- *
- * The George Washington University, 2010.
- * Gabriel Parmer, gparmer@gwu.edu, 2010
  */
 
 #define COS_FMT_PRINT
@@ -20,12 +17,11 @@
 #include <print.h>
 #include <cos_vect.h>
 
-#include <pgfault.h>
+#include <objtype.h>
 
 #include <lock.h>
 
 #include <sched.h>
-#include <timed_blk.h>
 
 //#define ACT_LOG
 #ifdef ACT_LOG
@@ -58,12 +54,8 @@ typedef enum {
 #define ACT_RECORD(a, s, l, t1, t2)
 #endif
 
-//#define TIMED
-
 struct blocked_thds {
-	/* Timed records if this invocation is timed or not */
 	unsigned short int thd_id;
-	unsigned char timed;
 	struct blocked_thds *next, *prev;
 };
 
@@ -80,9 +72,33 @@ struct meta_lock {
 static volatile unsigned long lock_id = 1;
 /* Head of the linked list of locks. */
 static struct meta_lock STATIC_INIT_LIST(locks, next, prev);
+static volatile unsigned long long generation = 0;
+/* Datastructure of blocked thread structures */
+COS_VECT_CREATE_STATIC(bthds);
 
-#define TAKE(spdid) 	if (sched_component_take(spdid))    return -1;
-#define RELEASE(spdid)	if (sched_component_release(spdid)) return -1;
+#define TAKE(spdid) 	do { if (sched_component_take(spdid))    return -1; } while (0)
+#define RELEASE(spdid)	do { if (sched_component_release(spdid)) return -1; } while (0)
+
+/* 
+ * FIXME: to make this predictable (avoid memory allocation in the
+ * must-be-predictable case, we should really cos_vect_add_id when we
+ * first find out about the possibility of the thread making any
+ * invocations.
+ */
+static struct blocked_thds *bt_get(unsigned short int tid)
+{
+	struct blocked_thds *bt;
+
+	bt = cos_vect_lookup(&bthds, tid);
+	if (NULL == bt) {
+		bt = malloc(sizeof(struct blocked_thds));
+		if (NULL == bt) return NULL;
+		INIT_LIST(bt, next, prev);
+		bt->thd_id = tid;
+		if (tid != cos_vect_add_id(&bthds, bt, tid)) return NULL;
+	}
+	return bt;
+}
 
 static inline struct meta_lock *lock_find(unsigned long lock_id, spdid_t spd)
 {
@@ -111,6 +127,16 @@ static void lock_print_all(void)
 		       ml, ml->next, ml->prev, (unsigned int)ml->lock_id, ml->spd);
 	}
 	prints("\n");
+}
+
+static int lock_is_thd_blocked(struct meta_lock *ml, unsigned short int thd)
+{
+	struct blocked_thds *bt;
+
+	for (bt = FIRST_LIST(&ml->b_thds, next, prev) ; bt != &ml->b_thds ; bt = bt->next) {
+		if (bt->thd_id == thd) return 1;
+	}
+	return 0;
 }
 
 static struct meta_lock *lock_alloc(spdid_t spd)
@@ -156,141 +182,172 @@ static void lock_free(struct meta_lock *l)
 
 /* Public functions: */
 
-/* Pessimistic lock doesn't do pretakes */
+/* 
+ * The problem being solved here is this: T_1 wishes to take the
+ * mutex, finds that it is taken by another thread.  It calls into
+ * this function, but is preempted by T_2, the lock holder.  The lock
+ * is released.  T_1 is switched back to and it invokes this component
+ * asking to block till the lock is released.  This component has no
+ * way of knowing that the lock already has been released, so we block
+ * for no reason in wait for the lock to be "released".  Thus what we
+ * do is have the client call the pretake function checking before and
+ * after invoking it that the lock is still taken.  We record the
+ * generation number in pretake and make sure that it is consistent in
+ * take.  This signifies that no release has happened in the interim,
+ * and that we really should sleep.
+ */
 int lock_component_pretake(spdid_t spd, unsigned long lock_id, unsigned short int thd)
 {
-	BUG();
-	return 0;
+	struct meta_lock *ml;
+ 	spdid_t spdid = cos_spd_id();
+	int ret = 0;
+
+	ACT_RECORD(ACT_PRELOCK, spd, lock_id, cos_get_thd_id(), thd);
+	TAKE(spdid);
+//	lock_print_all();
+	ml = lock_find(lock_id, spd);
+	if (NULL == ml) {
+		ret = -1;
+		goto done;
+	}
+	ml->gen_num = generation;
+done:
+	RELEASE(spdid);
+	return ret;
 }
 
 /* 
  * Dependencies here (thus priority inheritance) will NOT be used if
  * you specify a timeout value.
+ *
+ * Return 0: lock taken, -1: could not find lock, 1: inconsistency -- retry!
  */
-int lock_component_take(spdid_t spd, unsigned long lock_id, 
-			unsigned short int thd_id /* ignored */, unsigned int microsec) 
+int lock_component_take(spdid_t spd, unsigned long lock_id, unsigned short int thd_id)
 {
 	struct meta_lock *ml;
 	spdid_t spdid = cos_spd_id();
 	unsigned short int curr = (unsigned short int)cos_get_thd_id();
-	unsigned short int owner;
 	struct blocked_thds blocked_desc = {.thd_id = curr};
-	int ret = 0;
+	int ret = -1;
 	
 	ACT_RECORD(ACT_LOCK, spd, lock_id, cos_get_thd_id(), thd_id);
 	TAKE(spdid);
 
-	if (0 == microsec) {
-		ret = TIMER_EXPIRED;
-		goto error;
-	}
 	ml = lock_find(lock_id, spd);
 	/* tried to access a lock not yet created */
-	if (!ml) {
-		ret = -1;
+	if (!ml) goto error;
+	assert(!lock_is_thd_blocked(ml, curr));
+
+	/* The calling component needs to retry its user-level lock,
+	 * some preemption has caused the generation count to get off,
+	 * i.e. we don't have the most up-to-date view of the
+	 * lock's state */
+	if (ml->gen_num != generation) {
+		ml->gen_num = generation;
+		ret = 1;
 		goto error;
 	}
-
-	/* Lock not taken? */
-	owner = ml->owner;
-	if (!owner) {
-		ml->owner = curr;
-		RELEASE(spdid);
-		goto done;
-	}
+	generation++;
 
 	/* Note that we are creating the list of blocked threads from
 	 * memory allocated on the individual thread's stacks. */
 	INIT_LIST(&blocked_desc, next, prev);
 	ADD_LIST(&ml->b_thds, &blocked_desc, next, prev);
-	blocked_desc.timed = (TIMER_EVENT_INF != microsec);
 	//ml->owner = thd_id;
 
 	RELEASE(spdid);
 
-	/* Bypass calling the timed every component if there is an infinite wait */
-	if (TIMER_EVENT_INF == microsec) {
-		if (-1 == sched_block(spdid, owner)) BUG();
-		if (!EMPTY_LIST(&blocked_desc, next, prev)) BUG();
-
-		ACT_RECORD(ACT_WAKEUP, spd, lock_id, cos_get_thd_id(), 0);
-		ret = 0;
-	} else {
-		/* ret here will fall through.  We do NOT use the
-		 * dependency here as I can't think through the
-		 * repercussions */
-		if (-1 == (ret = timed_event_block(spdid, microsec))) return ret;
-
-		/* 
-		 * We might have woken from a timeout, which means
-		 * that we need to remove this thread from the waiting
-		 * list for the lock.
-		 */
-		TAKE(spdid);
-		ml = lock_find(lock_id, spd);
-		if (!ml) {
-			ret = -1;
-			goto error;
-		}
-		REM_LIST(&blocked_desc, next, prev);
-		RELEASE(spdid);
-
-		ACT_RECORD(ACT_WAKEUP, spd, lock_id, cos_get_thd_id(), 0); 
-		/* ret is set to the amnt of time we blocked */
+	if (-1 == sched_block(spdid, thd_id)) {
+		printc("Deadlock including thdids %d -> %d in spd %d, lock id %d.\n", 
+		       cos_get_thd_id(), thd_id, spd, (int)lock_id);
+		debug_print("BUG: Possible deadlock @ "); 
+		assert(0);
+		if (-1 == sched_block(spdid, 0)) assert(0);
 	}
+	if (!EMPTY_LIST(&blocked_desc, next, prev)) BUG();
+	/* 
+	 * OK, this seems ridiculous but here is the rational: Assume
+	 * we are a middle-prio thread, and were just woken by a low
+	 * priority thread. We will preempt that thread when woken,
+	 * and will continue here.  If a high priority thread is also
+	 * waiting on the lock, then we would preempt the low priority
+	 * thread while it should wake the high prio thread. With the
+	 * following crit sect will switch to the low prio thread that
+	 * still holds the component lock.  See the comments in
+	 * lock_component_release. 
+	 */
+	//TAKE(spdid);
+	//RELEASE(spdid);
+
+	ACT_RECORD(ACT_WAKEUP, spd, lock_id, cos_get_thd_id(), 0);
+	ret = 0;
 done:
 	return ret;
 error:
 	RELEASE(spdid);
-	return ret;
+	goto done;
 }
 
 int lock_component_release(spdid_t spd, unsigned long lock_id)
 {
 	struct meta_lock *ml;
-	struct blocked_thds *bt;
+	struct blocked_thds *sent, *bt;
 	spdid_t spdid = cos_spd_id();
-	u16_t tid;
-	int timed;
 
 	ACT_RECORD(ACT_UNLOCK, spd, lock_id, cos_get_thd_id(), 0);
 	TAKE(spdid);
 
+	generation++;
 	ml = lock_find(lock_id, spd);
 	if (!ml) goto error;
-
-	assert(ml->owner == cos_get_thd_id());
-	/* Give up the lock */
-	ml->owner = 0;
 
 	/* Apparently, lock_take calls haven't been made. */
 	if (EMPTY_LIST(&ml->b_thds, next, prev)) {
 		RELEASE(spdid);
 		return 0;
 	}
-	bt = FIRST_LIST(&ml->b_thds, next, prev);
-	REM_LIST(bt, next, prev);
-	
-	ACT_RECORD(ACT_WAKE, spd, lock_id, cos_get_thd_id(), bt->thd_id);
-	
-	/* cache locally */
-	tid = bt->thd_id;
-	timed = bt->timed;
-	ml->owner = tid;
-	RELEASE(spdid);
-	
-	/* Wakeup the way we were put to sleep */
-	if (timed) {
-		timed_event_wakeup(spdid, tid);
-	} else {
+	sent = bt = FIRST_LIST(&ml->b_thds, next, prev);
+	/* Remove all threads from the lock's list */
+	REM_LIST(&ml->b_thds, next, prev);
+	/* Unblock all waiting threads */
+	while (1) {
+		struct blocked_thds *next;
+		u16_t tid;
+
+		/* This is suboptimal: if we wake a thread with a
+		 * higher priority, it will be switched to.  Given we
+		 * are holding the component lock here, we should get
+		 * switched _back_ to so as to wake the rest of the
+		 * components. */
+		next = FIRST_LIST(bt, next, prev);
+		REM_LIST(bt, next, prev);
+
+		ACT_RECORD(ACT_WAKE, spd, lock_id, cos_get_thd_id(), bt->thd_id);
+
+		/* cache locally */
+		tid = bt->thd_id;
+		/* Last node in the list? */
+		if (bt == next) {
+			/* This is sneaky, so to reiterate: Keep this
+			 * lock till now so that if we wake another
+			 * thread, and it begins execution, the system
+			 * will switch back to this thread so that we
+			 * can wake up the rest of the waiting threads
+			 * (one of which might have the highest
+			 * priority).  We release before we wake the
+			 * last as we don't really need the lock
+			 * anymore, an it will avoid quite a few
+			 * invocations.*/
+			RELEASE(spdid);
+		}
+
+		/* Wakeup the way we were put to sleep */
 		assert(tid != cos_get_thd_id());
 		sched_wakeup(spdid, tid);
-	}
 
-	/* FIXME, BROKEN: The above logic will probably not work with
-	 * multiple threads waiting on the lock with dependencies from
-	 * all of them to this thread.  They are expecting this thread
-	 * to release them all, not just the first one. */
+		if (bt == next) break;
+		bt = next;
+	}
 
 	return 0;
 error:
@@ -350,3 +407,14 @@ unsigned long *lock_stats(spdid_t spdid, unsigned long *stats) { return NULL; }
 int lock_stats_len(spdid_t spdid) { return 0; }
 
 #endif
+
+int lock_component_reflect(spdid_t spd, int thd)
+{
+	return 0;
+}
+
+
+void cos_init(void *arg)
+{
+	cos_vect_init_static(&bthds);
+}
