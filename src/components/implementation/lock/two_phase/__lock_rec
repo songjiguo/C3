@@ -201,11 +201,17 @@ int lock_component_pretake(spdid_t spd, unsigned long lock_id, unsigned short in
  	spdid_t spdid = cos_spd_id();
 	int ret = 0;
 
+	/* if (spd == 10 && cos_get_thd_id() == 11) { */
+	/* 	printc("trigger fault in lock pre_take: thd %d spd %ld passed spd %d\n", cos_get_thd_id(), cos_spd_id(), spd); */
+	/* 	assert(0); */
+	/* } */
+
 	ACT_RECORD(ACT_PRELOCK, spd, lock_id, cos_get_thd_id(), thd);
 	TAKE(spdid);
 //	lock_print_all();
 	ml = lock_find(lock_id, spd);
 	if (NULL == ml) {
+		printc("can not find ml for lock %ld spd %d\n", lock_id, spd);
 		ret = -1;
 		goto done;
 	}
@@ -228,11 +234,11 @@ int lock_component_take(spdid_t spd, unsigned long lock_id, unsigned short int t
 	unsigned short int curr = (unsigned short int)cos_get_thd_id();
 	struct blocked_thds blocked_desc = {.thd_id = curr};
 	int ret = -1;
-
-	/* if (spd == 10 && cos_get_thd_id() == 11) { */
-	/* 	printc("trigger fault in lock take: thd %d spd %ld passed spd %d\n", cos_get_thd_id(), cos_spd_id(), spd); */
-	/* 	assert(0); */
-	/* } */
+	
+	if (spd == 10 && cos_get_thd_id() == 11) {
+		printc("trigger fault in lock take: thd %d spd %ld passed spd %d\n", cos_get_thd_id(), cos_spd_id(), spd);
+		assert(0);
+	}
 	
 	ACT_RECORD(ACT_LOCK, spd, lock_id, cos_get_thd_id(), thd_id);
 	TAKE(spdid);
@@ -285,6 +291,7 @@ int lock_component_take(spdid_t spd, unsigned long lock_id, unsigned short int t
 
 	ACT_RECORD(ACT_WAKEUP, spd, lock_id, cos_get_thd_id(), 0);
 	ret = 0;
+	printc("lock_component_take after sched_block %d\n", cos_get_thd_id());
 done:
 	return ret;
 error:
@@ -298,12 +305,11 @@ int lock_component_release(spdid_t spd, unsigned long lock_id)
 	struct blocked_thds *sent, *bt;
 	spdid_t spdid = cos_spd_id();
 
-
-	if (spd == 10 && cos_get_thd_id() == 13) {
-		printc("trigger fault in lock release: thd %d spd %ld passed spd %d\n", 
-		       cos_get_thd_id(), cos_spd_id(), spd);
-		assert(0);
-	}
+	/* if (spd == 10 && cos_get_thd_id() == 13) { */
+	/* 	printc("trigger fault in lock release: thd %d spd %ld passed spd %d\n", */
+	/* 	       cos_get_thd_id(), cos_spd_id(), spd); */
+	/* 	assert(0); */
+	/* } */
 
 
 	ACT_RECORD(ACT_UNLOCK, spd, lock_id, cos_get_thd_id(), 0);
@@ -419,10 +425,7 @@ int lock_stats_len(spdid_t spdid) { return 0; }
 
 #endif
 
-int lock_component_reflect(spdid_t spd, int thd)
-{
-	return 0;
-}
+unsigned long __lock_component_alloc(spdid_t spd) { return 0;}
 
 void cos_init(void *arg)
 {

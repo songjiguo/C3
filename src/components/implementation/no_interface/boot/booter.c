@@ -387,23 +387,22 @@ failure_notif_wait(spdid_t caller, spdid_t failed)
 
 /* Reboot the failed component! */
 void 
-failure_notif_fail(spdid_t caller, spdid_t failed)
+failure_notif_fail(spdid_t caller, spdid_t failed_spd)
 {
 	struct spd_local_md *md;
 
 	LOCK();
 
-	printc("Booter is rebooting the failed component\n");
-
-//	boot_spd_caps_chg_activation(failed, 0);
-	md = &local_md[failed];
+	/* printc("Booter is rebooting the failed component\n"); */
+//	boot_spd_caps_chg_activation(failed_spd, 0);
+	md = &local_md[failed_spd];
 	assert(md);
 
-	if (boot_spd_map_populate(md->h, failed, md->comp_info, 0)) BUG();
+	if (boot_spd_map_populate(md->h, failed_spd, md->comp_info, 0)) BUG();
 	/* can fail if component had no boot threads: */
-	if (md->h->flags & COBJ_INIT_THD) boot_spd_thd(failed); 	
-	if (boot_spd_caps(md->h, failed)) BUG();
-//	boot_spd_caps_chg_activation(failed, 1);
+	if (md->h->flags & COBJ_INIT_THD) boot_spd_thd(failed_spd); 	
+	if (boot_spd_caps(md->h, failed_spd)) BUG();
+//	boot_spd_caps_chg_activation(failed_spd, 1);
 
 	UNLOCK();
 }

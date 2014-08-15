@@ -273,14 +273,14 @@ pop(struct pt_regs **regs_restore)
 	struct thd_invocation_frame *inv_frame;
 	struct thd_invocation_frame *curr_frame;
 
+	fs_reg_setup(__KERNEL_PERCPU);  // Jiguo: for per_cpu purpose
+	/* printk("test pop\n"); */
+
 	struct thread *curr = core_get_curr_thd_id(get_cpuid_fast());
 	int fault_ret;
 
-	fs_reg_setup(__KERNEL_PERCPU);  // Jiguo: for per_cpu purpose
-
 	inv_frame = thd_invocation_pop(curr);
 
-	/* printk("test pop\n"); */
 	/* At the top of the invocation stack? */
 	if (unlikely(inv_frame == NULL)) {
 		assert(!(curr->flags & THD_STATE_READY_UPCALL));
@@ -319,8 +319,8 @@ pop(struct pt_regs **regs_restore)
 #endif
 	if (unlikely(fault_ret = pop_fault_detect(inv_frame, curr_frame))){
 		/* KEVIN fill *regs_restore */
-		/* printk("%d: ->%d\n", thd_get_id(curr), spd_get_index(curr_frame->spd)); */
-		/* printk("pop: detected fault\n"); */
+		printk("%d: ->%d\n", thd_get_id(curr), spd_get_index(curr_frame->spd));
+		printk("pop: detected fault\n");
 		pop_fault_update(inv_frame, curr_frame);
 		*regs_restore = thd_ret_fault_notif(curr, curr_frame->spd);
 #ifdef MEAS_RET_FAULT_DETECT
@@ -343,7 +343,8 @@ __fault_ipc_invoke(struct thread *thd, vaddr_t fault_addr, int flags, struct pt_
 	unsigned int fault_cap;
 	struct pt_regs *nregs;
 
-	/* if (!dest_spd) printk("deskt spd %d \n", spd_get_index(dest_spd)); */
+	if (dest_spd) printk("deskt spd %d \n", spd_get_index(dest_spd));
+
 	if (unlikely(dest_spd)) s = dest_spd;
 	else {
 		s = virtual_namespace_query(regs->ip);
@@ -382,7 +383,6 @@ __fault_ipc_invoke(struct thread *thd, vaddr_t fault_addr, int flags, struct pt_
 	memcpy(&thd->fault_regs, regs, sizeof(struct pt_regs));
 	/* a = ipc_walk_static_cap(fault_cap<<20, 0, 0, &r); */
 	a = ipc_walk_static_cap(fault_cap<<20, regs->sp, regs->ip, &r);
-	/* a = ipc_walk_static_cap(thd, fault_cap<<20, regs->sp, regs->ip, &r); */
 
 	/* printk("found dest spd %d \n", spd_get_index(s)); */
 	/* printk("fault_num %d \n", fault_num); */
@@ -412,7 +412,7 @@ fault_ipc_invoke(struct thread *thd, vaddr_t fault_addr, int flags, struct pt_re
 
 /* fault notification related functions */
 
-COS_SYSCALL unsigned long
+COS_SYSCALL int
 cos_syscall_fault_cntl(int spdid, int option, spdid_t d_spdid, unsigned int cap_no)
 {
 	return fault_cnt_syscall_helper(spdid, option, d_spdid, cap_no);
@@ -421,7 +421,7 @@ cos_syscall_fault_cntl(int spdid, int option, spdid_t d_spdid, unsigned int cap_
 static vaddr_t
 thd_ipc_fault_notif(struct thread *thd, struct spd *dest_spd)
 {
-	/* printk("[[[[[[ cos: Fault is detected on INVOCATION ]]]]]]\n"); */
+	printk("[[[[[[ cos: Fault is detected on INVOCATION ]]]]]]\n");
 
 	return __fault_ipc_invoke(thd, 0, 0, &thd->regs, COS_FLT_FLT_NOTIF, dest_spd);
 }
@@ -429,7 +429,7 @@ thd_ipc_fault_notif(struct thread *thd, struct spd *dest_spd)
 static struct pt_regs *
 thd_ret_fault_notif(struct thread *thd, struct spd *dest_spd)
 {
-	/* printk("[[[[[[ cos: Fault is detected on POP ]]]]]]\n"); */
+	printk("[[[[[[ cos: Fault is detected on POP ]]]]]]\n");
 	__fault_ipc_invoke(thd, 0, 0, &thd->regs, COS_FLT_FLT_NOTIF, dest_spd);
 	return &thd->regs;
 }
@@ -1230,7 +1230,7 @@ cos_syscall_switch_thread_cont(int spd_id, unsigned short int rthd_id,
         /* ANDY detect fault when switch thread */
 	if(unlikely(fault_ret = switch_thd_fault_detect(thd))){
 		switch_thd_fault_update(thd);
-		/* printk("cos switch : current thread %d\n", thd_get_id(curr)); */
+		printk("cos switch : current thread %d\n", thd_get_id(curr));
 		thd_switch_fault_notif(thd);
 #ifdef MEAS_TCS_FAULT_DETECT
 		rdtscll(end);
@@ -1239,6 +1239,7 @@ cos_syscall_switch_thread_cont(int spd_id, unsigned short int rthd_id,
 	}
 	switch_thd_fault_update(curr);
 
+	/* printk("cos switch : update fault counter %d\n", thd_get_id(curr)); */
 	return &thd->regs;
 ret_err:
 	curr->regs.ax = ret_code;

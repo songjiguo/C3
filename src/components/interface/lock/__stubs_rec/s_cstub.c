@@ -24,6 +24,5 @@ int __sg_lock_component_release(spdid_t spd, unsigned long lock_id)
 
 int __sg_lock_component_alloc(spdid_t spd)
 {
-	printc("lock ser: alloc\n");
 	return lock_component_alloc(spd);
 }

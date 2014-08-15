@@ -15,6 +15,12 @@
  :all clients need depend on the bottom component, which seems fine
  since there is no circular dependency created.
 
+When get new lock id (alloc), there are two circumstances 1) on the
+normal path (no fault or after the fault), we need get a new unique
+client id (server id could be the same as client id, or totally
+different) 2) when recovery (in update_rd), we need just a new server
+id and unchanged client id
+
 */
 
 #include <cos_component.h>
@@ -153,6 +159,35 @@ extern int sched_wakeup(spdid_t spdid, unsigned short int thd_id);
 extern vaddr_t mman_reflect(spdid_t spd, int src_spd, int cnt);
 extern int mman_release_page(spdid_t spd, vaddr_t addr, int flags); 
 
+#ifdef REFLECTION
+static void
+rd_relfection(int cap)
+{
+	assert(cap);
+
+	int count_obj = 0; // reflected objects
+	int lock_spd = cap_to_dest(cap);
+	
+	// remove the mapped page for lock spd
+	vaddr_t addr;
+	count_obj = mman_reflect(cos_spd_id(), lock_spd, 1);
+	while (count_obj--) {
+		addr = mman_reflect(cos_spd_id(), lock_spd, 0);
+		mman_release_page(cos_spd_id(), addr, lock_spd);
+	}
+
+	// to reflect all threads blocked from lock component
+	int wake_thd;
+	count_obj = sched_reflect(cos_spd_id(), lock_spd, 1);
+	while (count_obj--) {
+		wake_thd = sched_reflect(cos_spd_id(), lock_spd, 0);
+		sched_wakeup(cos_spd_id(), wake_thd);
+	}
+
+	return;
+}
+#endif
+
 static struct rec_data_lk *
 update_rd(int lkid, int thd, int cap)
 {
@@ -162,54 +197,40 @@ update_rd(int lkid, int thd, int cap)
         rd = rdlk_lookup(lkid);
 	if (unlikely(!rd)) goto done;
 	if (likely(rd->fcnt == fcounter)) goto done;
+	rd->fcnt = fcounter;  // update fcounter first before wake up any other threads
 
 #ifdef REFLECTION
-	int count_obj = 0; // only reflect objects before the fault
-	int lock_spd = cap_to_dest(cap);
-
-	// remove the mapped page for lock spd
-	vaddr_t addr;
-	count_obj = mman_reflect(cos_spd_id(), lock_spd, 1);
-	printc("\n\nready to reflect mmgr....(count_obj %d)\n", count_obj);
-	while (count_obj--) {
-		addr = mman_reflect(cos_spd_id(), lock_spd, 0);
-		printc("reflect and release page %p\n", addr);
-		mman_release_page(cos_spd_id(), addr, lock_spd);
-	}
-
-	// to reflect all threads blocked from lock component
-	int wake_thd;
-	count_obj = sched_reflect(cos_spd_id(), lock_spd, 1);
-	printc("\nready to reflect scheduler....(count_obj %d)\n", count_obj);
-	while (count_obj--) {
-		wake_thd = sched_reflect(cos_spd_id(), lock_spd, 0);
-		printc("reflect and wake up thread %d\n", wake_thd);
-		sched_wakeup(cos_spd_id(), wake_thd);
-	}
-	printc("\n");
-
+	rd_relfection(cap);
 #else
-        /* current thread will do the reflection on the state of other
-	   threads (object) by waking up all threads that block on
-	   this lock (the thread is already blocked in the scheduler
-	   when the lock component crashes). Notice that the thread
-	   woken up could be added to the list again since the lock is
-	   not released yet.
-	*/
 	for (blk_thd = FIRST_LIST(&rd->blkthd, next, prev);
 	     blk_thd != &rd->blkthd;
 	     blk_thd = FIRST_LIST(blk_thd, next, prev)){
 		sched_wakeup(cos_spd_id(), blk_thd->id);
 	}
-
 #endif
-
-	rd->s_lkid = lock_component_alloc(cos_spd_id()); // update server side id
-	rd->fcnt = fcounter;  // update fcounter first before wake up any other threads
-	
+	// update server side id, but keep client side id unchanged
+	rd->s_lkid = __lock_component_alloc(cos_spd_id());
 done:
 	return rd;
 }
+
+CSTUB_FN_ARGS_1(unsigned long, __lock_component_alloc, spdid_t, spdid)
+
+        struct rec_data_lk *rd = NULL;
+	unsigned long ser_lkid, cli_lkid;
+redo:
+CSTUB_ASM_1(__lock_component_alloc, spdid)
+       if (unlikely (fault)){
+	       if (cos_fault_cntl(COS_CAP_FAULT_UPDATE, cos_spd_id(), uc->cap_no)) {
+		       printc("set cap_fault_cnt failed\n");
+		       BUG();
+	       }
+
+       	       fcounter++;
+       	       goto redo;
+       }
+
+CSTUB_POST
 
 
 /************************************/
@@ -227,24 +248,19 @@ CSTUB_FN_ARGS_1(unsigned long, lock_component_alloc, spdid_t, spdid)
 redo:
 CSTUB_ASM_1(lock_component_alloc, spdid)
        if (unlikely (fault)){
-	       if (cos_fault_cntl(COS_CAP_FAULT_UPDATE, cos_spd_id(), uc->cap_no)) {
-		       printc("set cap_fault_cnt failed\n");
-		       BUG();
-	       }
-
-       	       fcounter++;
+	       CSTUB_FAULT_UPDATE();
        	       goto redo;
        }
 
 	if ((ser_lkid = ret) > 0) {
-		// if does exist, we need an unique id. Otherwise, create it
+		// if does exist, we need an unique client id. Otherwise, create it
 		if (unlikely(rdlk_lookup(ser_lkid))) {
 			cli_lkid = get_unique();
 			assert(cli_lkid > 0 && cli_lkid != ser_lkid);
 		} else {
 			cli_lkid = ser_lkid;
 		}
-		// already ensure that cli_lkid is uniqe here
+		// always ensure that cli_lkid is unique
 		rd = rdlk_alloc(cli_lkid);
 		assert(rd);
 
@@ -269,12 +285,7 @@ redo:
 CSTUB_ASM_3(lock_component_pretake, spdid, rd->s_lkid, thd)
 
        if (unlikely(fault)){
-	       if (cos_fault_cntl(COS_CAP_FAULT_UPDATE, cos_spd_id(), uc->cap_no)) {
-		       printc("set cap_fault_cnt failed\n");
-		       BUG();
-	       }
-
-       	       fcounter++;
+	       CSTUB_FAULT_UPDATE();
        	       goto redo;
        }
 
@@ -285,7 +296,7 @@ CSTUB_FN_ARGS_3(int, lock_component_take, spdid_t, spdid, unsigned long, lock_id
 
 	struct blocked_thd blk_thd;
 	struct rec_data_lk *rd = NULL;
-redo:
+
         rd = update_rd(lock_id, thd, uc->cap_no);   // call call booter instead
 	if (!rd) {
 		printc("try to take a non-tracking lock\n");
@@ -295,21 +306,15 @@ redo:
 CSTUB_ASM_3(lock_component_take, spdid, rd->s_lkid, thd)
 
        if (unlikely (fault)){
-	       printc("found a fault\n");
-	       if (cos_fault_cntl(COS_CAP_FAULT_UPDATE, cos_spd_id(), uc->cap_no)) {
-		       printc("set cap_fault_cnt failed\n");
-		       BUG();
-	       }
+	       CSTUB_FAULT_UPDATE();
 	       /*  remove current thd from blocking list since the
 		   fault occurs either before the current thd blocked
 		   (invoke scheduler) or after woken up (return from
 		   scheduler). So it should not staty on the blocking
-		   list when the fault occurs
+		   list after fault occurs
 	       */
 	       REM_LIST(&blk_thd, next, prev);
-       
-       	       fcounter++;
-	       goto redo;
+	       ret = 0; // this will force curr thread to contend the lock again
        }
        REM_LIST(&blk_thd, next, prev);
 
@@ -329,12 +334,7 @@ redo:
 CSTUB_ASM_2(lock_component_release, spdid, rd->s_lkid)
 
        if (unlikely (fault)){
-	       if (cos_fault_cntl(COS_CAP_FAULT_UPDATE, cos_spd_id(), uc->cap_no)) {
-		       printc("set cap_fault_cnt failed\n");
-		       BUG();
-	       }
-
-       	       fcounter++;
+	       CSTUB_FAULT_UPDATE();
        	       goto redo;
        }
 

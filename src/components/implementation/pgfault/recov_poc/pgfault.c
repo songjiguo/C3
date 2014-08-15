@@ -16,13 +16,17 @@
 #include <failure_notif.h>
 
 /* FIXME: should have a set of saved fault regs per thread. */
-int regs_active = 0; 
-struct cos_regs regs;
 
 int fault_flt_notif_handler(spdid_t spdid, void *fault_addr, int flags, void *ip)
 {
-	/* printc("parameters: spdid %d fault_addr %p flags %d ip %p (thd %d)\n", spdid, fault_addr, flags, ip, cos_get_thd_id()); */
-	/* fault_page_fault_handler(spdid, fault_addr, flags, ip); */
+	unsigned long r_ip; 	/* the ip to return to */
+	/* printc("pgfault notifier: spdid %d fault_addr %p flags %d ip %p (thd %d)\n", spdid, fault_addr, flags, ip, cos_get_thd_id()); */
+
+	int tid = cos_get_thd_id();
+	assert(!cos_thd_cntl(COS_THD_INV_FRAME_REM, tid, 1, 0));
+	assert(r_ip = cos_thd_cntl(COS_THD_INVFRM_IP, tid, 1, 0));
+	assert(!cos_thd_cntl(COS_THD_INVFRM_SET_IP, tid, 1, r_ip-8));
+
 	return 0;
 }
 
@@ -35,29 +39,14 @@ int fault_page_fault_handler(spdid_t spdid, void *fault_addr, int flags, void *i
 	int tid = cos_get_thd_id();
 	//int i;
 
-	printc("parameters: spdid %d fault_addr %p flags %d ip %p (thd %d)\n", spdid, fault_addr, flags, ip, cos_get_thd_id());
+	/* printc("parameters: spdid %d fault_addr %p flags %d ip %p (thd %d)\n", spdid, fault_addr, flags, ip, cos_get_thd_id()); */
 
 	if (test_num++ > 5) {
 		printc("has failed %d times\n", test_num);
 		assert(0);
 	}
 
-	/* START UNCOMMENT FOR FAULT INFO */
-	/* if (regs_active) BUG(); */
-	/* regs_active = 1; */
-	/* cos_regs_save(tid, spdid, fault_addr, &regs); */
-	/* printc("Thread %d faults in spd %d @ %p\n",  */
-	/*        tid, spdid, fault_addr); */
-	/* cos_regs_print(&regs); */
-	/* regs_active = 0; */
-
-	/* for (i = 0 ; i < 5 ; i++) */
-	/* 	printc("Frame ip:%lx, sp:%lx\n",  */
-	/* 	       cos_thd_cntl(COS_THD_INVFRM_IP, tid, i, 0),  */
-	/* 	       cos_thd_cntl(COS_THD_INVFRM_SP, tid, i, 0)); */
-	/* END UNCOMMENT FOR FAULT INFO */
-
-	printc("Thread %d faults in spd %d @ %p\n", tid, spdid, fault_addr);
+	/* printc("Thread %d faults in spd %d @ %p\n", tid, spdid, fault_addr); */
 
 	/* remove from the invocation stack the faulting component! */
 	assert(!cos_thd_cntl(COS_THD_INV_FRAME_REM, tid, 1, 0));

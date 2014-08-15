@@ -263,15 +263,18 @@ interrupt_fault_update(struct thread *next) /* for now, this is the timer thread
 	return 0;
 }
 
-// extern struct invocation_cap invocation_capabilities[MAX_STATIC_CAP];  jiguo
+/*
+  For COS_CAP_FAULT_UPDATE:
+  return 0: successfully trigger or update (client needs fcounter++)
+  return 1: the fault counter has been updated already over this interface
+  return -1: error
+*/
 
-/* cos_syscall_fault_cntl(int spdid, int option, spdid_t d_spdid, unsigned int cap_no) */
-
-static inline unsigned long
+static inline int
 fault_cnt_syscall_helper(int spdid, int option, spdid_t d_spdid, unsigned int cap_no)
 {
 	int i;
-	unsigned long ret = 0;
+	int ret = 0;
 	struct spd *d_spd, *this_spd, *dest_spd;
 	struct invocation_cap *cap_entry;
 	unsigned int cap_no_origin;
@@ -298,6 +301,8 @@ fault_cnt_syscall_helper(int spdid, int option, spdid_t d_spdid, unsigned int ca
 	}
 
 	cap_entry = &d_spd->caps[cap_no];
+	/* printk("cap_entry fcn %d and its destination fcn %d\n", cap_entry->fault.cnt,  */
+	/*        cap_entry->destination->fault.cnt); */
 	/* printk("dest_spd is %d\n", spd_get_index(cap_entry->destination)); */
 	/* printk("2\n"); */
 
@@ -305,9 +310,12 @@ fault_cnt_syscall_helper(int spdid, int option, spdid_t d_spdid, unsigned int ca
 	case COS_SPD_FAULT_TRIGGER:
 		d_spd->fault.cnt++;
 		break;
-	case COS_CAP_FAULT_UPDATE: 
-		/* Update fault counter for this client. This is slow
-		 * now... due to the new data structure */
+	case COS_CAP_FAULT_UPDATE: 		/* Update fault counter for this client */
+		if (cap_entry->fault.cnt == cap_entry->destination->fault.cnt) {
+			ret = 1;
+			break;
+		}
+		/* printk("update fault counter for spd %d\n", d_spdid); */
 		for (i = 1; i < d_spd->ncaps ; i++) {
 			struct invocation_cap *cap = &d_spd->caps[i];
 			if (cap->destination == cap_entry->destination) {
@@ -316,7 +324,7 @@ fault_cnt_syscall_helper(int spdid, int option, spdid_t d_spdid, unsigned int ca
 		}		
 		break;
 	default:
-		ret = -1;
+		assert(0);
 		break;
 	}
 	
@@ -402,7 +410,7 @@ interrupt_fault_update(struct thread *next)
 }
 
 
-static inline unsigned long
+static inline int
 fault_cnt_syscall_helper(int spdid, int option, spdid_t d_spdid, unsigned int cap_no)
 {
 	return 0;

@@ -159,4 +159,16 @@
 	CSTUB_ASM_4(name, first, second, third, fourth)			\
 	CSTUB_POST
 
+// Jiguo: update the fault counter over the client interface
+#if (RECOVERY_ENABLE == 1)
+#define CSTUB_FAULT_UPDATE()						\
+	int fault_update = cos_fault_cntl(COS_CAP_FAULT_UPDATE, cos_spd_id(), uc->cap_no); \
+	if (fault_update < 0) assert(0);				\
+	if (!fault_update) fcounter++;					\
+	
+#else
+#define CSTUB_FAULT_UPDATE()
+
+#endif
+
 #endif	/* CSTUB_H */
