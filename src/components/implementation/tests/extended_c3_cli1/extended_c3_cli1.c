@@ -8,6 +8,7 @@
 #include <timed_blk.h>
 
 #include <ec3_ser1.h>
+#include <ec3_ser2.h>
 
 int high, low, med;
 int warm;
@@ -70,18 +71,22 @@ cos_init(void)
 			printc("<<<high thd %d>>>\n", cos_get_thd_id());
 			ec3_ser1_test();
 		}
-
+		
 		if (cos_get_thd_id() == med) {
 			printc("<<<med thd %d>>>\n", cos_get_thd_id());
 			ec3_ser1_test();
 		}
-#endif
-		/* if (cos_get_thd_id() == warm) { */
-		/* 	printc("<<<warm thd %d>>>\n", cos_get_thd_id()); */
-		/* 	i = 0; */
-		/* 	while(i++ < ITER) ec3_ser1_test(); */
-		/* } */
+
+		if (cos_get_thd_id() == warm) {
+			printc("<<<warm thd %d>>>\n", cos_get_thd_id());
+			ec3_ser2_test();
+		}
 		
+		if (cos_get_thd_id() == low) {
+			printc("<<<low thd %d>>>\n", cos_get_thd_id());
+			ec3_ser2_test();
+		}
+#endif
 	}
 
 	return;

@@ -54,8 +54,14 @@
 struct fault_counter {
 	unsigned long cnt;
 };
+struct reflect_counter {   // this is used to ensure only one reflection per fault
+	unsigned long cnt;
+};
 #else
 struct fault_counter {
+	unsigned long : 0;		
+};
+struct reflect_counter {
 	unsigned long : 0;		
 };
 #endif
@@ -176,6 +182,7 @@ struct spd {
 
 	/* fault counter associated with this spd */
 	struct fault_counter fault;
+	struct reflect_counter reflection;
 
 	struct spd_location location[MAX_SPD_VAS_LOCATIONS];
 	/* 

@@ -82,7 +82,7 @@ rdblk_addblk(struct rec_data_blk *rd, struct blocked_thd *ptr_blkthd, int dep_th
 
 	INIT_LIST(ptr_blkthd, next, prev);
 	ADD_END_LIST(&rd->blkthd, ptr_blkthd, next, prev);
-	/* printc("\n[[[[sched_block: traking...ptr_blkthd %p (thd %d  spd %d rd->blkthd addr %p)]]]\n\n", ptr_blkthd, cos_get_thd_id(), rd->spdid, &rd->blkthd); */
+	/* printc("\n[[[[sched_block: tracking...ptr_blkthd %p (thd %d  spd %d rd->blkthd addr %p)]]]\n\n", ptr_blkthd, cos_get_thd_id(), rd->spdid, &rd->blkthd); */
        
 	return;
 }
@@ -113,7 +113,7 @@ int __sg_sched_block(spdid_t spdid, int dependency_thd)
 
 	// remove from list in both normal path and reflect path
 	cos_sched_lock_take();
-	REM_LIST(&blk_thd, next, prev);
+	if (!EMPTY_LIST(&blk_thd, next, prev)) REM_LIST(&blk_thd, next, prev);
 	/* printc("sched_block: removing...blkthd %p (thd %d)\n", &blk_thd, cos_get_thd_id()); */
 	cos_sched_lock_release();
 #else
@@ -145,11 +145,19 @@ int __sg_sched_reflect(spdid_t spd, int src_spd, int cnt)
 		for (blk_thd = FIRST_LIST(&rd->blkthd, next, prev);
 		     blk_thd != &rd->blkthd;
 		     blk_thd = FIRST_LIST(blk_thd, next, prev)){
+			printc("(cnt)blocked thds %d\n", blk_thd->id);
 			ret++;
 		}
 	} else {
+
+		for (blk_thd = FIRST_LIST(&rd->blkthd, next, prev);
+		     blk_thd != &rd->blkthd;
+		     blk_thd = FIRST_LIST(blk_thd, next, prev)){
+			printc("(before)blocked thds %d\n", blk_thd->id);
+		}
+
 		blk_thd = FIRST_LIST(&rd->blkthd, next, prev);
-		REM_LIST(blk_thd, next, prev);
+		if (!EMPTY_LIST(blk_thd, next, prev)) REM_LIST(blk_thd, next, prev);
 		ret = blk_thd->id;
 	}
 done:

@@ -242,7 +242,13 @@ ipc_walk_static_cap(unsigned int capability, vaddr_t sp,
 
 		/* yusheng detects the fault on invocation */
 		/* printk("current spd is %d\n", spd_get_index(curr_spd)); */
-		ipc_fault_update(cap_entry, dest_spd);
+
+
+		// Jiguo: let's not update here. Instead update for all caps over an interface later
+		/* ipc_fault_update(cap_entry, dest_spd); */
+
+
+
 		/* printk("&thd->regs spd %d\n", ((struct pt_regs *)&thd->regs)->bx); */
 		addr = thd_ipc_fault_notif(thd, dest_spd);
 
@@ -321,7 +327,9 @@ pop(struct pt_regs **regs_restore)
 		/* KEVIN fill *regs_restore */
 		printk("%d: ->%d\n", thd_get_id(curr), spd_get_index(curr_frame->spd));
 		printk("pop: detected fault\n");
+
 		pop_fault_update(inv_frame, curr_frame);
+
 		*regs_restore = thd_ret_fault_notif(curr, curr_frame->spd);
 #ifdef MEAS_RET_FAULT_DETECT
 		rdtscll(end);
@@ -4415,6 +4423,7 @@ cos_syscall_spd_cntl(int id, int op_spdid, long arg1, long arg2)
 		}
 
 		init_spd_fault_cnt(spd);   // Jiguo: for FT
+		init_spd_reflect_cnt(spd);   // Jiguo: for FT
 	
 		spd_make_active(spd);
 

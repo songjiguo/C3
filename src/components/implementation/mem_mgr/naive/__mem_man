@@ -127,7 +127,6 @@ __page_get(void)
 	f->nmaps  = -1; 	 /* belongs to us... */
 	f->c.addr = (vaddr_t)hp; /* ...at this address */
 	if (cos_mmap_cntl(COS_MMAP_GRANT, 0, cos_spd_id(), (vaddr_t)hp, frame_index(f))) {
-		printc("grant @ %p for frame %d\n", hp, frame_index(f));
 		BUG();
 	}
 	return hp;
@@ -432,6 +431,8 @@ int mman_release_page(spdid_t spd, vaddr_t addr, int flags)
 	int ret = 0;
 
 	LOCK();
+
+	printc("mman_release_page (thd %d)\n", cos_get_thd_id());
 
 	// Jiguo: when flags > 0, it is the src_spd. We want to revoke from it
 	if (flags > 0) spd = flags;

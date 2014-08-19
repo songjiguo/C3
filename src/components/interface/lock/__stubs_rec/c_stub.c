@@ -21,6 +21,13 @@ client id (server id could be the same as client id, or totally
 different) 2) when recovery (in update_rd), we need just a new server
 id and unchanged client id
 
+ps: in most cases the lock is not freed once created. so rd_dealloc is
+not used
+
+ps: not use ipc_fault_update on invocation path in the kernel anymore,
+only when the client detects such fault and update fault counter on
+capability over that interface 
+
 */
 
 #include <cos_component.h>
@@ -33,6 +40,11 @@ id and unchanged client id
 #include <lock.h>
 #include <cstub.h>
 
+extern int sched_component_take(spdid_t spdid);
+extern int sched_component_release(spdid_t spdid);
+#define TAKE(spdid) 	do { if (sched_component_take(spdid))    return; } while (0)
+#define RELEASE(spdid)	do { if (sched_component_release(spdid)) return; } while (0)
+
 extern void *alloc_page(void);
 extern void free_page(void *ptr);
 
@@ -43,14 +55,6 @@ extern void free_page(void *ptr);
 #define CVECT_ALLOC() alloc_page()
 #define CVECT_FREE(x) free_page(x)
 #include <cvect.h>
-
-#define LOCK_PRINT 0
-
-#if LOCK_PRINT == 1
-#define print_lk(fmt,...) printc(fmt, ##__VA_ARGS__)
-#else
-#define print_lk(fmt,...)
-#endif
 
 /* global fault counter, only increase, never decrease */
 static unsigned long fcounter;
@@ -152,63 +156,64 @@ cap_to_dest(int cap)
 	if ((dest = cos_cap_cntl(COS_CAP_GET_SER_SPD, 0, 0, cap)) <= 0) assert(0);
 	return dest;
 }
-#endif
 
 extern int sched_reflect(spdid_t spdid, int src_spd, int cnt);
 extern int sched_wakeup(spdid_t spdid, unsigned short int thd_id);
 extern vaddr_t mman_reflect(spdid_t spd, int src_spd, int cnt);
 extern int mman_release_page(spdid_t spd, vaddr_t addr, int flags); 
 
-#ifdef REFLECTION
 static void
-rd_relfection(int cap)
+rd_reflection(int cap)
 {
 	assert(cap);
 
+	TAKE(cos_spd_id());
+
 	int count_obj = 0; // reflected objects
-	int lock_spd = cap_to_dest(cap);
+	int dest_spd = cap_to_dest(cap);
 	
 	// remove the mapped page for lock spd
 	vaddr_t addr;
-	count_obj = mman_reflect(cos_spd_id(), lock_spd, 1);
+	count_obj = mman_reflect(cos_spd_id(), dest_spd, 1);
+	printc("evt relfects on mmgr: %d objs\n", count_obj);
 	while (count_obj--) {
-		addr = mman_reflect(cos_spd_id(), lock_spd, 0);
-		mman_release_page(cos_spd_id(), addr, lock_spd);
+		addr = mman_reflect(cos_spd_id(), dest_spd, 0);
+		printc("evt mman_release: %p addr\n", (void *)addr);
+		mman_release_page(cos_spd_id(), addr, dest_spd);
 	}
 
 	// to reflect all threads blocked from lock component
 	int wake_thd;
-	count_obj = sched_reflect(cos_spd_id(), lock_spd, 1);
+	count_obj = sched_reflect(cos_spd_id(), dest_spd, 1);
+	printc("evt relfects on sched: %d objs\n", count_obj);
 	while (count_obj--) {
-		wake_thd = sched_reflect(cos_spd_id(), lock_spd, 0);
+		wake_thd = sched_reflect(cos_spd_id(), dest_spd, 0);
+		printc("wake_thd %d\n", wake_thd);
 		sched_wakeup(cos_spd_id(), wake_thd);
 	}
+	printc("evt reflection done (thd %d)\n\n", cos_get_thd_id());
+
+	RELEASE(cos_spd_id());
 
 	return;
 }
 #endif
 
 static struct rec_data_lk *
-update_rd(int lkid, int thd, int cap)
+update_rd(int lkid, int cap)
 {
         struct rec_data_lk *rd = NULL;
 	struct blocked_thd *blk_thd;
 
         rd = rdlk_lookup(lkid);
 	if (unlikely(!rd)) goto done;
+	printc("update_rd: rd->fcnt %ld fcounter %ld (thd %d)\n", 
+	       rd->fcnt, fcounter, cos_get_thd_id());
 	if (likely(rd->fcnt == fcounter)) goto done;
 	rd->fcnt = fcounter;  // update fcounter first before wake up any other threads
 
-#ifdef REFLECTION
-	rd_relfection(cap);
-#else
-	for (blk_thd = FIRST_LIST(&rd->blkthd, next, prev);
-	     blk_thd != &rd->blkthd;
-	     blk_thd = FIRST_LIST(blk_thd, next, prev)){
-		sched_wakeup(cos_spd_id(), blk_thd->id);
-	}
-#endif
 	// update server side id, but keep client side id unchanged
+	printc("thd %d is creating a new server side lock id\n", cos_get_thd_id());
 	rd->s_lkid = __lock_component_alloc(cos_spd_id());
 done:
 	return rd;
@@ -216,17 +221,11 @@ done:
 
 CSTUB_FN_ARGS_1(unsigned long, __lock_component_alloc, spdid_t, spdid)
 
-        struct rec_data_lk *rd = NULL;
-	unsigned long ser_lkid, cli_lkid;
 redo:
 CSTUB_ASM_1(__lock_component_alloc, spdid)
-       if (unlikely (fault)){
-	       if (cos_fault_cntl(COS_CAP_FAULT_UPDATE, cos_spd_id(), uc->cap_no)) {
-		       printc("set cap_fault_cnt failed\n");
-		       BUG();
-	       }
 
-       	       fcounter++;
+       if (unlikely (fault)){
+	       CSTUB_FAULT_UPDATE();
        	       goto redo;
        }
 
@@ -247,12 +246,13 @@ CSTUB_FN_ARGS_1(unsigned long, lock_component_alloc, spdid_t, spdid)
 	unsigned long ser_lkid, cli_lkid;
 redo:
 CSTUB_ASM_1(lock_component_alloc, spdid)
+
        if (unlikely (fault)){
 	       CSTUB_FAULT_UPDATE();
        	       goto redo;
        }
 
-	if ((ser_lkid = ret) > 0) {
+       if ((ser_lkid = ret) > 0) {
 		// if does exist, we need an unique client id. Otherwise, create it
 		if (unlikely(rdlk_lookup(ser_lkid))) {
 			cli_lkid = get_unique();
@@ -272,11 +272,33 @@ CSTUB_ASM_1(lock_component_alloc, spdid)
 CSTUB_POST
 
 
+// usually the lock is not freed once created
+CSTUB_FN_ARGS_2(int, lock_component_free, spdid_t, spdid, unsigned long, lock_id)
+
+        struct rec_data_lk *rd = NULL;
+
+        rd = update_rd(lock_id, uc->cap_no);
+	if (!rd) {
+		printc("try to free a non-tracking lock\n");
+		return -1;
+	}
+
+CSTUB_ASM_2(lock_component_free, spdid, rd->s_lkid)
+
+       if (unlikely(fault)){
+	       CSTUB_FAULT_UPDATE();
+       }
+
+CSTUB_POST
+
+/* pretake still needs trying to contend the lock, so use goto redo */
+
 CSTUB_FN_ARGS_3(int, lock_component_pretake, spdid_t, spdid, unsigned long, lock_id, unsigned short int, thd)
 
         struct rec_data_lk *rd = NULL;
 redo:
-        rd = update_rd(lock_id, thd, uc->cap_no);
+printc("lock cli: pretake calling update_rd %d\n", cos_get_thd_id());
+        rd = update_rd(lock_id, uc->cap_no);
 	if (!rd) {
 		printc("try to pretake a non-tracking lock\n");
 		return -1;
@@ -285,47 +307,53 @@ redo:
 CSTUB_ASM_3(lock_component_pretake, spdid, rd->s_lkid, thd)
 
        if (unlikely(fault)){
+	       printc("lock cli pretak: found fault \n");
 	       CSTUB_FAULT_UPDATE();
        	       goto redo;
        }
 
 CSTUB_POST
 
-// track the block thread on each thread stack
+/* track the block thread on each thread stack. No need to goto redo
+ * since ret = 0 will force it to contend again with other threads
+ */
+
 CSTUB_FN_ARGS_3(int, lock_component_take, spdid_t, spdid, unsigned long, lock_id, unsigned short int, thd)
 
 	struct blocked_thd blk_thd;
 	struct rec_data_lk *rd = NULL;
 
-        rd = update_rd(lock_id, thd, uc->cap_no);   // call call booter instead
+        rd = update_rd(lock_id, uc->cap_no);   // call call booter instead
 	if (!rd) {
 		printc("try to take a non-tracking lock\n");
 		return -1;
 	}
        rdlk_addblk(rd, &blk_thd);       
+
 CSTUB_ASM_3(lock_component_take, spdid, rd->s_lkid, thd)
 
        if (unlikely (fault)){
 	       CSTUB_FAULT_UPDATE();
-	       /*  remove current thd from blocking list since the
-		   fault occurs either before the current thd blocked
-		   (invoke scheduler) or after woken up (return from
-		   scheduler). So it should not staty on the blocking
-		   list after fault occurs
-	       */
-	       REM_LIST(&blk_thd, next, prev);
-	       ret = 0; // this will force curr thread to contend the lock again
+               /* this will force contending the lock again */
+	       ret = 0; 
        }
+       /*  remove current thd from blocking list since the
+	   fault occurs either before the current thd blocked
+	   (invoke scheduler) or after woken up (return from
+	   scheduler). So it should not staty on the blocking
+	   list after fault occurs */
        REM_LIST(&blk_thd, next, prev);
 
 CSTUB_POST
 
 
+
+/* There is no need to goto redo since reflection will wake up all threads from lock spd */
 CSTUB_FN_ARGS_2(int, lock_component_release, spdid_t, spdid, unsigned long, lock_id)
 
         struct rec_data_lk *rd = NULL;
-redo:
-        rd = update_rd(lock_id, cos_get_thd_id(), uc->cap_no);
+
+        rd = update_rd(lock_id, uc->cap_no);
 	if (!rd) {
 		printc("try to release a non-tracking lock\n");
 		return -1;
@@ -335,7 +363,6 @@ CSTUB_ASM_2(lock_component_release, spdid, rd->s_lkid)
 
        if (unlikely (fault)){
 	       CSTUB_FAULT_UPDATE();
-       	       goto redo;
        }
 
 CSTUB_POST

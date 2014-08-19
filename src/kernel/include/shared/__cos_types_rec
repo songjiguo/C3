@@ -567,6 +567,7 @@ enum {
 /* operations for general fault notification */
 enum {
 	COS_SPD_FAULT_TRIGGER,
+	COS_CAP_REFLECT_UPDATE,
 	COS_CAP_FAULT_UPDATE
 };
 

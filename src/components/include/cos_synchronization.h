@@ -34,7 +34,7 @@ typedef struct __attribute__((packed)) {
 /* Provided by the synchronization primitive component */
 extern unsigned long lock_component_alloc(spdid_t spdid);
 extern unsigned long __lock_component_alloc(spdid_t spdid); // Jiguo: get a new ser id
-extern void lock_component_free(spdid_t spdid, unsigned long lock_id);
+extern int lock_component_free(spdid_t spdid, unsigned long lock_id);
 
 int lock_release_contention(cos_lock_t *l, union cos_lock_atomic_struct *prev_val);
 int lock_take_contention(cos_lock_t *l, union cos_lock_atomic_struct *result, 

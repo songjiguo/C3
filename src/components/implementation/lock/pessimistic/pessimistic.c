@@ -311,18 +311,18 @@ unsigned long lock_component_alloc(spdid_t spd)
  	return l->lock_id;
 }
 
-void lock_component_free(spdid_t spd, unsigned long lock_id)
+int lock_component_free(spdid_t spd, unsigned long lock_id)
 {
 	struct meta_lock *l;
 	spdid_t spdid = cos_spd_id();
 
-	if (sched_component_take(spdid)) return;
+	if (sched_component_take(spdid)) return 0;
 	l = lock_find(lock_id, spd);
-	if (sched_component_release(spdid)) return;
+	if (sched_component_release(spdid)) return 0;
 
 	if (l) lock_free(l);
 
-	return;
+	return 0;
 }
 
 #ifdef ACT_LOG

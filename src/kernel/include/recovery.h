@@ -143,6 +143,13 @@ init_spd_fault_cnt(struct spd *spd)
 }
 
 static inline int
+init_spd_reflect_cnt(struct spd *spd)
+{
+	spd->reflection.cnt = 0;
+	return 0;
+}
+
+static inline int
 init_cap_fault_cnt(struct invocation_cap *cap)
 {
 	cap->fault.cnt = 0;
@@ -292,7 +299,6 @@ fault_cnt_syscall_helper(int spdid, int option, spdid_t d_spdid, unsigned int ca
 	}
 
 	cap_no >>= 20;
-	/* printk("cos: cap_no is %d base is %d\n", cap_no, d_spd->cap_base); */
 
 	if (unlikely(cap_no >= MAX_STATIC_CAP)) {
 		printk("cos: capability %d greater than max\n",
@@ -301,27 +307,53 @@ fault_cnt_syscall_helper(int spdid, int option, spdid_t d_spdid, unsigned int ca
 	}
 
 	cap_entry = &d_spd->caps[cap_no];
-	/* printk("cap_entry fcn %d and its destination fcn %d\n", cap_entry->fault.cnt,  */
+	/* printk("cos: cap_no is %d\n", cap_no); */
+	/* printk("cos: cap_entry %p\n", (void *)cap_entry); */
+	/* printk("cap_entry fcn %d and its destination fcn %d\n", cap_entry->fault.cnt, */
 	/*        cap_entry->destination->fault.cnt); */
 	/* printk("dest_spd is %d\n", spd_get_index(cap_entry->destination)); */
+
+	/* for (i = 1; i < d_spd->ncaps ; i++) { */
+	/* 	printk("cap_entry->destination %d\n", spd_get_index(d_spd->caps[i].destination)); */
+	/* } */
 	/* printk("2\n"); */
 
 	switch(option) {
 	case COS_SPD_FAULT_TRIGGER:
+		printk("increase fault counter for spd %d\n", d_spdid);
 		d_spd->fault.cnt++;
+		d_spd->reflection.cnt = d_spd->fault.cnt;
 		break;
 	case COS_CAP_FAULT_UPDATE: 		/* Update fault counter for this client */
 		if (cap_entry->fault.cnt == cap_entry->destination->fault.cnt) {
 			ret = 1;
 			break;
 		}
-		/* printk("update fault counter for spd %d\n", d_spdid); */
+
+		/* cap_entry->destination->reflection.cnt =  */
+		/* 	cap_entry->destination->fault.cnt; */
+		
+		printk("update all cap fault counter\n");
 		for (i = 1; i < d_spd->ncaps ; i++) {
 			struct invocation_cap *cap = &d_spd->caps[i];
+			/* printk("cap->destination %d cap_entry->destination %d\n", */
+			/*        spd_get_index(cap->destination),  */
+			/*        spd_get_index(cap_entry->destination)); */
 			if (cap->destination == cap_entry->destination) {
 				cap->fault.cnt = cap_entry->destination->fault.cnt;
 			}
-		}		
+		}
+		break;
+	case COS_CAP_REFLECT_UPDATE: 		/* Update reflect counter for this client */
+		printk("check if reflection counter\n");
+		if (cap_entry->destination->reflection.cnt 
+		    == cap_entry->destination->fault.cnt) {
+			/* printk("(1)d_spd->reflection.cnt %d d_spd->fault.cnt %d\n", */
+			/*        cap_entry->destination->reflection.cnt , */
+			/*        cap_entry->destination->fault.cnt); */
+			cap_entry->destination->reflection.cnt++;
+			ret = 1;
+		}
 		break;
 	default:
 		assert(0);

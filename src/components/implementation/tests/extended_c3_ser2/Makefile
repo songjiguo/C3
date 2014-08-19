@@ -1,8 +1,8 @@
-C_OBJS=extended_cli1.o
+C_OBJS=extended_ser2.o
 ASM_OBJS=
-COMPONENT=ec3cli1.o
-INTERFACES=
-DEPENDENCIES=periodic_wake sched printc lock  mem_mgr ec3_ser1 ec3_ser2 timed_blk
+COMPONENT=ec3ser2.o
+INTERFACES=ec3_ser2
+DEPENDENCIES=periodic_wake sched printc lock mem_mgr timed_blk evt
 IF_LIB=
 
 include ../../Makefile.subsubdir

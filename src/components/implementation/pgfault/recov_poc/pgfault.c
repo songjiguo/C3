@@ -20,7 +20,7 @@
 int fault_flt_notif_handler(spdid_t spdid, void *fault_addr, int flags, void *ip)
 {
 	unsigned long r_ip; 	/* the ip to return to */
-	/* printc("pgfault notifier: spdid %d fault_addr %p flags %d ip %p (thd %d)\n", spdid, fault_addr, flags, ip, cos_get_thd_id()); */
+	printc("pgfault notifier: spdid %d fault_addr %p flags %d ip %p (thd %d)\n", spdid, fault_addr, flags, ip, cos_get_thd_id());
 
 	int tid = cos_get_thd_id();
 	assert(!cos_thd_cntl(COS_THD_INV_FRAME_REM, tid, 1, 0));
@@ -39,7 +39,7 @@ int fault_page_fault_handler(spdid_t spdid, void *fault_addr, int flags, void *i
 	int tid = cos_get_thd_id();
 	//int i;
 
-	/* printc("parameters: spdid %d fault_addr %p flags %d ip %p (thd %d)\n", spdid, fault_addr, flags, ip, cos_get_thd_id()); */
+	printc("pgfault parameters: spdid %d fault_addr %p flags %d ip %p (thd %d)\n", spdid, fault_addr, flags, ip, cos_get_thd_id());
 
 	if (test_num++ > 5) {
 		printc("has failed %d times\n", test_num);

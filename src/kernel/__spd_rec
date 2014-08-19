@@ -327,7 +327,8 @@ struct spd *spd_alloc(unsigned short int num_caps, struct usr_inv_cap *user_cap_
 
 	for (i = 0 ; i < MAX_SPD_VAS_LOCATIONS ; i++) spd->location[i].size = 0;
 
-	init_spd_fault_cnt(spd);
+	init_spd_fault_cnt(spd);  // Jiguo: for FT
+	init_spd_reflect_cnt(spd);
 
 	return spd;
 }

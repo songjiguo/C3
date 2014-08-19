@@ -155,10 +155,17 @@ static int __evt_read(struct evt *e)
 	struct evt_grp *g;
 
 	assert(NULL != e);
-	assert(e->status != EVT_BLOCKED);
+        /* Jiguo: if a thread is reflected and woken up, it won't call
+	   evt_trigger to update event status. Solution: 1) call evt
+	   manager to update 2) comment it as it is now */
+	/* assert(e->status != EVT_BLOCKED); */
+
 	g = e->grp;
 	assert(NULL != g && g->status != EVTG_BLOCKED);
-	if (cos_get_thd_id() != g->tid) return -1;
+	if (cos_get_thd_id() != g->tid) {
+		printc("curr %d grp id %ld\n", cos_get_thd_id(), g->tid);
+		return -1;
+	}
 	if (EVT_TRIGGERED == e->status) {
 		/* remove from the triggered list */
 		REM_LIST(e, next, prev);
@@ -166,6 +173,7 @@ static int __evt_read(struct evt *e)
 		e->status = EVT_INACTIVE;
 		return 1;
 	}
+	/* printc("thread %d set evet %d status to EVT_BLOCKED\n", cos_get_thd_id(), e->extern_id); */
 	e->status = EVT_BLOCKED;
 	return 0;
 }

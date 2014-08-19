@@ -19,6 +19,10 @@ int evt_trigger(spdid_t spdid, long extern_evt);
 
 // The following APIs have no fault tolerance support
 long evt_create(spdid_t spdid);
+
+long __evt_create(spdid_t spdid); // get a new server side id  :Jiguo
+int evt_update_status(spdid_t spdid, long extern_evt);  // after reflection, Jiguo
+
 long evt_grp_wait(spdid_t spdid);
 int evt_grp_mult_wait(spdid_t spdid, struct cos_array *data);
 int evt_set_prio(spdid_t spdid, long extern_evt, int prio);

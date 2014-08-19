@@ -8,16 +8,15 @@
 #include <periodic_wake.h>
 #include <timed_blk.h>
 
-#include <ec3_ser2.h>
-
-static int low = 13;
-static int mid = 12;
-static int hig = 11;
 
 #define EXAMINE_LOCK
 //#define EXAMINE_EVT
 
 #ifdef EXAMINE_LOCK
+
+static int low = 13;
+static int mid = 12;
+static int hig = 11;
 
 #include <cos_synchronization.h>
 cos_lock_t t_lock;
@@ -29,16 +28,18 @@ volatile int spin = 1;
 
 static void try_hp(void)
 {
-	printc("thread h : %d is doing something\n", cos_get_thd_id());
-	printc("thread h : %d is trying to take another lock...\n", cos_get_thd_id());
-	ec3_ser2_test();
+	printc("thread h (in spd %ld) : %d is doing something\n", 
+	       cos_spd_id(), cos_get_thd_id());
 
 	spin = 0;
-	printc("thread h : %d try to take lock\n", cos_get_thd_id());
+	printc("thread h (in spd %ld) : %d try to take lock\n", 
+	       cos_spd_id(), cos_get_thd_id());
 	LOCK_TAKE();
-	printc("thread h : %d has the lock\n", cos_get_thd_id());
+	printc("thread h (in spd %ld) : %d has the lock\n", 
+	       cos_spd_id(), cos_get_thd_id());
 	LOCK_RELEASE();
-	printc("thread h : %d released lock\n", cos_get_thd_id());
+	printc("thread h (in spd %ld) : %d released lock\n", 
+	       cos_spd_id(), cos_get_thd_id());
 
 	return;
 }
@@ -57,24 +58,26 @@ static void try_mp(void)
 
 static void try_lp(void)
 {
-	printc("<<< thread l : %d is doing something \n", cos_get_thd_id());
-	printc("thread l : %d try to take lock\n", cos_get_thd_id());
+	printc("<<< thread l (in spd %ld) : %d is doing something \n", 
+	       cos_spd_id(), cos_get_thd_id());
+	printc("thread l (in spd %ld) : %d try to take lock\n", 
+	       cos_spd_id(), cos_get_thd_id());
 	LOCK_TAKE();
-	printc("thread l : %d has the lock\n", cos_get_thd_id());
-	
-	printc("thread l : %d is trying to take another lock...\n", cos_get_thd_id());
-	ec3_ser2_test();
-
-	printc("thread l : %d spinning\n", cos_get_thd_id());
+	printc("thread l (in spd %ld) : %d has the lock\n", 
+	       cos_spd_id(), cos_get_thd_id());
+	printc("thread l (in spd %ld) : %d spinning\n", 
+	       cos_spd_id(), cos_get_thd_id());
 	while (spin);
-	printc("thread l : %d is doing something\n", cos_get_thd_id());
-	printc("thread l : %d try to release lock\n", cos_get_thd_id());
+	printc("thread l (in spd %ld): %d is doing something\n", 
+	       cos_spd_id(), cos_get_thd_id());
+	printc("thread l (in spd %ld): %d try to release lock\n", 
+	       cos_spd_id(), cos_get_thd_id());
 	LOCK_RELEASE();
 
 	return;
 }
 
-vaddr_t ec3_ser1_test(void)
+vaddr_t ec3_ser2_test(void)
 {
 	if (cos_get_thd_id() == hig) try_hp();
 	if (cos_get_thd_id() == mid) try_mp();
@@ -87,9 +90,8 @@ vaddr_t ec3_ser1_test(void)
 void
 cos_init(void)
 {
-	printc("thd %d is trying to init lock\n", cos_get_thd_id());
+	printc("thd %d is trying to init lock (in spd %ld)\n", cos_get_thd_id(), cos_spd_id());
 	LOCK_INIT();
-	/* INTERFACE_LOCK_INIT(); */
 	printc("after init LOCK\n");
 }
 
@@ -98,9 +100,15 @@ cos_init(void)
 
 #ifdef EXAMINE_EVT
 
+static int low = 13;
+static int mid = 13;
+static int hig = 11;
+
 long evt1, evt2;
 
 static int test_num = 0;
+static int test_num1 = 0;
+static int test_num2 = 0;
 
 static void try_hp(void)
 {
@@ -124,23 +132,28 @@ static void try_hp(void)
 
 static void try_mp(void)
 {
-	// 11 times will make sure all events triggered
-	// 6 is only for partially triggering
+
+	// 6 is only for partially triggering	
 	while(test_num < 6) {
-		printc("(ser1)thd m : %d is triggering event %ld (%d time)\n", cos_get_thd_id(), evt1, test_num);
+		printc("thread m : %d is triggering event %ld (%d time)\n", cos_get_thd_id(), evt1, test_num);
 		if (evt_trigger(cos_spd_id(), evt1)) assert(0);
 	}
-	
+
+	while(test_num1++ < 4) {
+		printc("thread m : %d is triggering event %ld (%d time)\n", cos_get_thd_id(), evt1+1, test_num1);
+		if (evt_trigger(cos_spd_id(), evt1)) assert(0);
+	}
+
 	return;
 }
 
-vaddr_t ec3_ser1_test(void)
+vaddr_t ec3_ser2_test(void)
 {
-	printc("\nSer1 test start\n\n");
+	printc("\nSer2 test start (thd %d)\n\n", cos_get_thd_id());
 	if (cos_get_thd_id() == hig) try_hp();
 	if (cos_get_thd_id() == mid) try_mp();
 
-	printc("\nSer1 test done\n\n");
+	printc("\nSer2 test done (thd %d)\n\n", cos_get_thd_id());
 
 	return 0;
 }

@@ -15,7 +15,9 @@
 
 #include "../../implementation/sched/cos_sched_sync.h"
 
-/*  Jiguo: Same way that memory manager maintains its own pages */
+/*  Jiguo: Same way/data structures that memory manager maintains its
+ *  own pages */
+
 struct mapping;
 /* A tagged union, where the tag holds the number of maps: */
 struct frame {
@@ -83,6 +85,9 @@ struct rec_data_page {
 struct rec_data_spd {
 	spdid_t       spdid;
 	struct rec_data_page pages;
+        /* every time during reflection for a fault, we switch to a
+	   different list */
+	/* struct rec_data_page pages2;   */
 };
 
 // slab allocator for different spds
@@ -135,8 +140,11 @@ rdpage_alloc(struct rec_data_spd *rd, vaddr_t addr)
 	rd_page->addr = addr;
 	INIT_LIST(rd_page, next, prev);
 	ADD_END_LIST(&rd->pages, rd_page, next, prev);
-	/* printc("tracking....page %p\n", addr);  */
-	/* cvect_add(&rec_page_vect, rd_page, addr >> PAGE_SHIFT); */
+	
+	/* printc("tracking....page %p (spd %d, by thd %d)\n",  */
+	/*        (void *)addr, rd->spdid, cos_get_thd_id()); */
+
+	/* /\* cvect_add(&rec_page_vect, rd_page, addr >> PAGE_SHIFT); *\/ */
 done:
 	return rd_page;
 }
@@ -157,6 +165,8 @@ int __sg_mman_release_page(spdid_t spd, vaddr_t addr, int arg)
 	
 	ret = mman_release_page(spd, addr, arg);
 
+	/* printc("mem_normal: ser side release_page %p\n", (void *)addr); */
+
 #ifdef REFLECTION
 	cos_sched_lock_take();
 
@@ -167,7 +177,6 @@ int __sg_mman_release_page(spdid_t spd, vaddr_t addr, int arg)
 	struct rec_data_page *rd_page;
 	/* rd_page = rdpage_lookup(addr); */
 	/* assert(rd_page); */
-
 	// remove from list and from cvect
 	/* REM_LIST(rd_page, next, prev); */
 	/* rdpage_dealloc(rd_page); */
@@ -175,6 +184,8 @@ int __sg_mman_release_page(spdid_t spd, vaddr_t addr, int arg)
 	rd_page = FIRST_LIST(&rd->pages, next, prev);
 	assert(rd_page);
 	REM_LIST(rd_page, next, prev);
+	printc("mem_normal release: pages %p @ %p\n", (void *)rd_page->addr, (void *)rd_page);
+	printc("mem_normal release: ser side removing from list\n");
 
 	cos_sched_lock_release();
 #endif
@@ -187,18 +198,21 @@ vaddr_t __sg_mman_get_page(spdid_t spdid, vaddr_t addr, int flags)
 
 	struct rec_data_spd *rd = NULL;
 
+	/* printc("mem_normal: ser side get_page\n"); */
+
 #ifdef REFLECTION
 	ret = mman_get_page(spdid, addr, flags);
 	assert(ret > 0);
 
-	// track the allocated page
 	cos_sched_lock_take();
 
+	// track the allocated page
 	rd = rdspd_lookup(spdid);
 	if (unlikely(!rd)) {
 		rd = rdspd_alloc(spdid);
 		assert(rd);
 		INIT_LIST(&rd->pages, next, prev);
+		/* INIT_LIST(&rd->pages2, next, prev); */
 		rd->spdid = spdid;
 	} 
 	assert(rd && rd->spdid == spdid);
@@ -218,6 +232,7 @@ vaddr_t __sg_mman_reflect(spdid_t spd, int src_spd, int cnt)
 {
         struct rec_data_spd *rd = NULL;
         struct rec_data_page *rd_page = NULL;
+        struct rec_data_page *rd_page_list = NULL;
 	int ret = 0;
 
 	assert(src_spd);
@@ -229,16 +244,23 @@ vaddr_t __sg_mman_reflect(spdid_t spd, int src_spd, int cnt)
 	if (!rd) goto done;  // no pages allocated yet for src_spd
 
 	if (cnt) {
-		for (rd_page = FIRST_LIST(&rd->pages, next, prev);
-		     rd_page != &rd->pages;
+		rd_page_list = &rd->pages;
+		for (rd_page = FIRST_LIST(rd_page_list, next, prev);
+		     rd_page != rd_page_list;
 		     rd_page = FIRST_LIST(rd_page, next, prev)){
+			printc("(cnt)saved pages %p @ %p\n", (void *)rd_page->addr, (void *)rd_page);
 			ret++;
 		}
 	} else {
-		rd_page = FIRST_LIST(&rd->pages, next, prev);
-		/* printc("reflect:rd_page %p rd->pages %p\n", rd_page, &rd->pages); */
-		/* if (rd_page == &rd->pages) goto done; // no more pages on the list */
-		REM_LIST(rd_page, next, prev);		
+		rd_page_list = &rd->pages;
+		for (rd_page = FIRST_LIST(rd_page_list, next, prev);
+		     rd_page != rd_page_list;
+		     rd_page = FIRST_LIST(rd_page, next, prev)){
+			printc("(before)saved pages %p @ %p\n", (void *)rd_page->addr, (void *)rd_page);
+		}
+
+		rd_page = FIRST_LIST(rd_page_list, next, prev);
+		printc("mem_normal reflection: pages %p @ %p\n", rd_page->addr, rd_page);
 		ret = rd_page->addr;
 	}
 done:
